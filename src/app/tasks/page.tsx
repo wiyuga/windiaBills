@@ -1,4 +1,3 @@
-tsx
 "use client"; // Required for useState, useEffect, useRouter
 import React, { useState, useEffect } from 'react';
 import PageHeader from "@/components/shared/page-header";
@@ -158,12 +157,8 @@ export default function TasksPage() {
           clients={clients}
           // Pass all unbilled tasks for the selected client.
           // The `invoiceDataForForm.tasks` (passed via `invoice` prop) will determine pre-selection in the dialog.
-          allTasksForClient={selectedClientForInvoice ? 
-            dataStore.getTasks().filter(t => 
-                t.clientId === selectedClientForInvoice.id && !t.billed
-            ) 
-            : []
-          }
+          // Also, include tasks that are part of the current invoice being formed, even if they were marked billed (e.g. if user re-opens this form)
+          allTasksForClient={tasks.filter(t => t.clientId === selectedClientForInvoice.id && (!t.billed || (invoiceDataForForm.tasks || []).some(it => it.taskId === t.id)))}
           trigger={<div />} // Empty div, not used when forceOpen is true
           onSave={handleSaveInvoice}
           forceOpen={isInvoiceFormOpen}

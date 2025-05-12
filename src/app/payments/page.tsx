@@ -1,25 +1,33 @@
-tsx
-"use client"
+"use client";
 import React, { useState, useMemo, useEffect } from 'react';
 import PageHeader from "@/components/shared/page-header";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-// import { Input } from "@/components/ui/input"; // Not used directly, Calendar is used
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { CalendarIcon, DollarSign } from "lucide-react";
 import { mockInvoices, mockClients, mockServices, mockTasks } from "@/lib/placeholder-data";
-import type { Invoice, Client, Service, Task } from "@/lib/types";
+import type { Invoice } from "@/lib/types";
 import { format, startOfMonth, endOfMonth, isWithinInterval, parseISO } from 'date-fns';
 import { cn } from '@/lib/utils';
+import { ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts";
+
+
+const chartConfig = {
+  revenue: {
+    label: "Revenue",
+    color: "hsl(var(--primary))",
+  },
+} satisfies ChartConfig;
+
 
 export default function PaymentsPage() {
   const allPaidInvoicesInitial = useMemo(() => mockInvoices.filter(inv => inv.status === 'paid'), []);
-  // Removed clients, services, tasks direct usage as they are looked up by ID. They are stable imports.
-
+  
   const [filteredInvoices, setFilteredInvoices] = useState<Invoice[]>(allPaidInvoicesInitial);
   const [selectedClient, setSelectedClient] = useState<string>('all');
   const [dateRange, setDateRange] = useState<{ from?: Date; to?: Date }>({});
@@ -29,7 +37,7 @@ export default function PaymentsPage() {
   const getServiceDetails = (serviceId: string) => mockServices.find(s => s.id === serviceId);
 
   useEffect(() => {
-    let currentInvoices = [...allPaidInvoicesInitial]; // Start with a fresh copy of the memoized initial list
+    let currentInvoices = [...allPaidInvoicesInitial]; 
 
     if (selectedClient !== 'all') {
       currentInvoices = currentInvoices.filter(inv => inv.clientId === selectedClient);
@@ -48,6 +56,7 @@ export default function PaymentsPage() {
     setFilteredInvoices(currentInvoices);
   }, [selectedClient, dateRange, allPaidInvoicesInitial]);
 
+
   const totalRevenueFiltered = useMemo(() => {
     return filteredInvoices.reduce((sum, inv) => sum + (inv.finalAmount || inv.totalAmount), 0);
   }, [filteredInvoices]);
@@ -57,13 +66,27 @@ export default function PaymentsPage() {
     const startOfRecentMonth = startOfMonth(today);
     const endOfRecentMonth = endOfMonth(today);
     
-    return allPaidInvoicesInitial // Use the memoized initial list for this calculation
+    return allPaidInvoicesInitial
       .filter(inv => isWithinInterval(parseISO(inv.issueDate), { start: startOfRecentMonth, end: endOfRecentMonth }))
       .reduce((sum, inv) => sum + (inv.finalAmount || inv.totalAmount), 0);
   }, [allPaidInvoicesInitial]);
 
   const displayRevenue = (selectedClient !== 'all' || dateRange.from || dateRange.to) ? totalRevenueFiltered : recentMonthRevenue;
-  const displayRevenueLabel = (selectedClient !== 'all' || dateRange.from || dateRange.to) ? "Filtered Revenue" : "Recent Month Revenue";
+  const displayRevenueLabel = (selectedClient !== 'all' || dateRange.from || dateRange.to) ? "Filtered Revenue" : "This Month's Revenue";
+  
+  const chartData = useMemo(() => {
+    const dataMap = new Map<string, number>();
+    const invoicesToChart = (selectedClient !== 'all' || dateRange.from || dateRange.to) ? filteredInvoices : allPaidInvoicesInitial;
+
+    invoicesToChart.forEach(inv => {
+      const month = format(parseISO(inv.issueDate), 'MMM yyyy');
+      const currentTotal = dataMap.get(month) || 0;
+      dataMap.set(month, currentTotal + (inv.finalAmount || inv.totalAmount));
+    });
+    
+    return Array.from(dataMap, ([month, revenue]) => ({ month, revenue })).slice(-6);
+
+  }, [filteredInvoices, allPaidInvoicesInitial, selectedClient, dateRange]);
 
 
   return (
@@ -124,7 +147,7 @@ export default function PaymentsPage() {
                         <Calendar
                             mode="single"
                             selected={dateRange.from}
-                            onSelect={(date) => setDateRange(prev => ({ ...prev, from: date }))}
+                            onSelect={(date) => setDateRange(prev => ({ ...prev, from: date ?? undefined }))}
                             initialFocus
                         />
                         </PopoverContent>
@@ -147,7 +170,7 @@ export default function PaymentsPage() {
                         <Calendar
                             mode="single"
                             selected={dateRange.to}
-                            onSelect={(date) => setDateRange(prev => ({ ...prev, to: date }))}
+                            onSelect={(date) => setDateRange(prev => ({ ...prev, to: date ?? undefined }))}
                             initialFocus
                         />
                         </PopoverContent>
@@ -155,6 +178,33 @@ export default function PaymentsPage() {
                 </div>
             </CardContent>
         </Card>
+
+        {chartData.length > 0 && (
+            <Card className="shadow-md">
+                <CardHeader>
+                    <CardTitle>Revenue Trend</CardTitle>
+                    <CardDescription>Revenue over selected period (max last 6 entries).</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <ChartContainer config={chartConfig} className="h-[300px] w-full">
+                        <BarChart data={chartData} margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} />
+                            <YAxis tickFormatter={(value) => `$${value}`} tickLine={false} axisLine={false} tickMargin={8} />
+                            <ChartTooltip 
+                                cursor={false}
+                                content={<ChartTooltipContent 
+                                    formatter={(value) => `$${Number(value).toFixed(2)}`} 
+                                    indicator="dot" 
+                                />}
+                            />
+                            <Bar dataKey="revenue" fill="var(--color-revenue)" radius={4} />
+                        </BarChart>
+                    </ChartContainer>
+                </CardContent>
+            </Card>
+        )}
+
 
         <Card className="shadow-md">
           <CardHeader>

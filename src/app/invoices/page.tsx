@@ -1,5 +1,5 @@
-tsx
-"use client"; // Required for useState and other hooks
+"use client";
+// Required for useState and other hooks
 import React, { useState } from 'react';
 import PageHeader from "@/components/shared/page-header";
 // Button removed as "Create New Invoice" is removed
@@ -102,6 +102,9 @@ export default function InvoicesPage() {
          <InvoiceFormDialog
             invoice={editingInvoice}
             clients={clients}
+            // For editing, pass all tasks of the client to re-populate selection options.
+            // For new invoices, this won't be used as task selection is driven by the TasksPage flow.
+            allTasksForClient={editingInvoice?.clientId ? tasks.filter(t => t.clientId === editingInvoice.clientId) : []}
             trigger={<></>} 
             onSave={handleSaveInvoice}
             forceOpen={isFormOpen}

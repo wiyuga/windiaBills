@@ -1,4 +1,3 @@
-tsx
 "use client"; // Required for useState, useEffect, useRouter
 import React, { useState } from 'react'; // Required for useState
 import PageHeader from "@/components/shared/page-header";

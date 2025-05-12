@@ -118,7 +118,7 @@ export default function TasksPage() {
           taskId: t.taskId,
           data: { billed: true } as Partial<TaskType> 
       }));
-      dataStore.updateMultipleTasks(taskUpdates); // This marks tasks as billed
+      dataStore.updateMultipleTasks(taskUpdates); 
 
       toast({ title: "Invoice Created", description: `New invoice ${newInvoice.invoiceNumber} created and tasks marked as billed.` });
       setIsInvoiceFormOpen(false);
@@ -130,18 +130,11 @@ export default function TasksPage() {
     }
   };
   
-  // Calculate tasksForInvoiceDialog based on the component's current 'tasks' state.
-  // This ensures that the InvoiceFormDialog receives the most consistent data relative to TaskListTable.
   let tasksForInvoiceDialog: TaskType[] = [];
-  if (isInvoiceFormOpen && selectedClientForInvoice && invoiceDataForForm?.tasks) {
-    // Use the 'tasks' state from TasksPage, which is subscribed to dataStore updates.
+  if (isInvoiceFormOpen && selectedClientForInvoice && invoiceDataForForm) { // invoiceDataForForm.tasks might be empty, that's fine.
     const currentTasksState = tasks; 
-    tasksForInvoiceDialog = currentTasksState.filter(t =>
-        t.clientId === selectedClientForInvoice.id &&
-        // Task should be shown if it's unbilled OR it's one of the tasks initially selected for this invoice
-        // (the latter part of OR is mainly for editing existing invoices, but good for robustness here too)
-        (!t.billed || (invoiceDataForForm.tasks || []).some(it => it.taskId === t.id))
-    );
+    // Pass all tasks for the client. The dialog will handle displaying billed status and pre-selecting.
+    tasksForInvoiceDialog = currentTasksState.filter(t => t.clientId === selectedClientForInvoice.id);
   }
 
   return (
@@ -159,7 +152,7 @@ export default function TasksPage() {
         }
       />
       <TaskListTable
-        tasks={tasks} // Pass the local, subscribed 'tasks' state
+        tasks={tasks} 
         clients={clients}
         services={services}
         onSaveTask={handleSaveTask}
@@ -169,7 +162,6 @@ export default function TasksPage() {
         <InvoiceFormDialog
           invoice={invoiceDataForForm as Partial<Invoice>} 
           clients={clients}
-          // Pass the carefully filtered list of tasks for the dialog
           allTasksForClient={tasksForInvoiceDialog}
           trigger={<div />} 
           onSave={handleSaveInvoice}

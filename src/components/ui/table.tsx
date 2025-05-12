@@ -62,9 +62,7 @@ const TableRow = React.forwardRef<
       className
     )}
     {...rest}
-  >
-    {children}
-  </tr>
+  >{children}</tr>
 ))
 TableRow.displayName = "TableRow"
 

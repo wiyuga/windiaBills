@@ -1,4 +1,3 @@
-tsx
 "use client"; // Required for useState, useEffect, useRouter
 import React, { useState, useEffect } from 'react';
 import PageHeader from "@/components/shared/page-header";
@@ -20,7 +19,7 @@ export default function TasksPage() {
   const services = mockServices; // Assuming services are static for now
 
   const [isInvoiceFormOpen, setIsInvoiceFormOpen] = useState(false);
-  const [invoiceDataForForm, setInvoiceDataForForm] = useState<Partial<Omit<Invoice, 'id' | 'totalAmount' | 'taxAmount' | 'finalAmount'> & {tasks: InvoiceTaskItem[]}> | undefined>(undefined);
+  const [invoiceDataForForm, setInvoiceDataForForm] = useState<Partial<Omit<Invoice, 'id' | 'totalAmount' | 'taxAmount' | 'finalAmount'>> & {tasks: InvoiceTaskItem[]} | undefined>(undefined);
   const [selectedClientForInvoice, setSelectedClientForInvoice] = useState<Client | undefined>(undefined);
 
   useEffect(() => {
@@ -46,7 +45,7 @@ export default function TasksPage() {
       const newTask: TaskType = {
         id: `task-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
         ...taskPayload,
-        clientName,
+        clientName, 
       };
       dataStore.addTask(newTask);
       toast({ title: "Task Added", description: "The new task has been successfully logged." });
@@ -82,6 +81,7 @@ export default function TasksPage() {
       dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(), 
       status: 'draft',
       invoiceNumber: newInvoiceNumber,
+      taxRate: clientForInvoice.currency === 'INR' ? 18 : 10, // Example: Different tax rates
     });
     setIsInvoiceFormOpen(true);
   };
@@ -115,7 +115,7 @@ export default function TasksPage() {
 
       const taskUpdates = invoiceFormData.selectedTasks.map((t) => ({ 
           taskId: t.taskId,
-          data: { billed: true } as Partial<TaskType>
+          data: { billed: true } as Partial<TaskType> 
       }));
       dataStore.updateMultipleTasks(taskUpdates);
 
@@ -129,14 +129,13 @@ export default function TasksPage() {
     }
   };
   
-  // Prepare tasks to pass to the InvoiceFormDialog
-  // This ensures that the filter uses the most current `tasks` state from `TasksPage`
   let tasksForInvoiceDialog: TaskType[] = [];
-  if (isInvoiceFormOpen && selectedClientForInvoice && invoiceDataForForm) {
-    const currentTasksState = tasks; // Use the current `tasks` state from TasksPage
+  if (isInvoiceFormOpen && selectedClientForInvoice && invoiceDataForForm?.tasks) {
+    const currentTasksState = dataStore.getTasks();
+    // Ensure that only tasks that are unbilled OR are already part of the invoice being formed are shown
     tasksForInvoiceDialog = currentTasksState.filter(t =>
-      t.clientId === selectedClientForInvoice.id &&
-      (!t.billed || (invoiceDataForForm.tasks || []).some(it => it.taskId === t.id))
+        t.clientId === selectedClientForInvoice.id &&
+        (!t.billed || invoiceDataForForm.tasks.some(it => it.taskId === t.id))
     );
   }
 

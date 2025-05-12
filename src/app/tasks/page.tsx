@@ -14,9 +14,9 @@ import type { InvoiceFormData } from '@/app/invoices/components/invoice-form-dia
 
 export default function TasksPage() {
   const { toast } = useToast();
-  const [tasks, setTasks] = useState<TaskType[]>(mockTasks); 
+  const [tasks, setTasks] = useState<TaskType[]>(mockTasks);
   const [globalInvoices, setGlobalInvoices] = useState<Invoice[]>(initialMockInvoices); // Manage global invoices
-  const clients = mockClients; 
+  const clients = mockClients;
   const services = mockServices;
 
   const [isInvoiceFormOpen, setIsInvoiceFormOpen] = useState(false);
@@ -30,9 +30,9 @@ export default function TasksPage() {
       setTasks(prevTasks => prevTasks.map(t => t.id === taskId ? {...t, ...data, date: data.date.toISOString() } : t));
        toast({ title: "Task Updated", description: "The task has been successfully updated." });
     } else {
-      const newTask: TaskType = { 
-        id: `task-${Date.now()}`, 
-        ...data, 
+      const newTask: TaskType = {
+        id: `task-${Date.now()}`,
+        ...data,
         date: data.date.toISOString(),
         clientName: clients.find(c=>c.id === data.clientId)?.name || '',
       };
@@ -43,6 +43,7 @@ export default function TasksPage() {
   };
 
   const handleCreateInvoiceFromTasks = (selectedTasksToInvoice: TaskType[]) => {
+    console.log("TasksPage: handleCreateInvoiceFromTasks called with tasks:", selectedTasksToInvoice);
     if (selectedTasksToInvoice.length === 0) {
       toast({ variant: "destructive", title: "No Tasks Selected", description: "Please select unbilled tasks to create an invoice." });
       return;
@@ -54,65 +55,79 @@ export default function TasksPage() {
     }
 
     setSelectedClientForInvoice(clientForInvoice);
-    
+
     const invoiceTasks: InvoiceTaskItem[] = selectedTasksToInvoice.map(task => ({
         taskId: task.id,
         description: task.description,
         hours: task.hours,
     }));
 
+    const newInvoiceNumber = `INV-${new Date().getFullYear()}-${String(Math.floor(Math.random()*9000)+1000).padStart(4, '0')}`;
+    console.log("TasksPage: Preparing invoiceDataForForm with invoice number:", newInvoiceNumber, "and tasks:", invoiceTasks);
+
     setInvoiceDataForForm({
       clientId: clientForInvoice.id,
       clientName: clientForInvoice.name,
-      tasks: invoiceTasks, // This maps to `selectedTasks` in the form dialog's default values
+      tasks: invoiceTasks,
       issueDate: new Date().toISOString(),
-      dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(), 
+      dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
       status: 'draft',
-      invoiceNumber: `INV-${new Date().getFullYear()}-${String(Math.floor(Math.random()*9000)+1000).padStart(4, '0')}`,
+      invoiceNumber: newInvoiceNumber,
     });
     setIsInvoiceFormOpen(true);
   };
 
   const handleSaveInvoice = (invoiceFormData: InvoiceFormData) => {
-    console.log("Saving invoice from Tasks page:", invoiceFormData);
-    
-    const newInvoice: Invoice = {
-        id: `invoice-${Date.now()}-${Math.random().toString(36).substring(2,7)}`,
-        invoiceNumber: invoiceFormData.invoiceNumber,
-        clientId: invoiceFormData.clientId,
-        clientName: clients.find(c => c.id === invoiceFormData.clientId)?.name || '',
-        tasks: invoiceFormData.selectedTasks, // Use selectedTasks from form data
-        totalAmount: invoiceFormData.totalAmount,
-        taxAmount: invoiceFormData.taxAmount,
-        finalAmount: invoiceFormData.finalAmount,
-        status: invoiceFormData.status,
-        issueDate: invoiceFormData.issueDate.toISOString(),
-        dueDate: invoiceFormData.dueDate.toISOString(),
-        notes: invoiceFormData.notes,
-        razorpayLink: invoiceFormData.razorpayLink,
-    };
+    console.log("TasksPage: handleSaveInvoice called with form data:", JSON.stringify(invoiceFormData, null, 2));
+    try {
+      const clientForInvoice = clients.find(c => c.id === invoiceFormData.clientId);
+      if (!clientForInvoice) {
+          toast({ variant: "destructive", title: "Error", description: "Client not found during invoice saving." });
+          console.error("TasksPage: Client not found for clientId:", invoiceFormData.clientId);
+          return;
+      }
 
-    setGlobalInvoices(prev => [newInvoice, ...prev]); // Add to a global/mock invoice list
+      const newInvoice: Invoice = {
+          id: `invoice-${Date.now()}-${Math.random().toString(36).substring(2,7)}`,
+          invoiceNumber: invoiceFormData.invoiceNumber,
+          clientId: invoiceFormData.clientId,
+          clientName: clientForInvoice.name,
+          tasks: invoiceFormData.selectedTasks,
+          totalAmount: invoiceFormData.totalAmount,
+          taxAmount: invoiceFormData.taxAmount,
+          finalAmount: invoiceFormData.finalAmount,
+          status: invoiceFormData.status,
+          issueDate: invoiceFormData.issueDate.toISOString(),
+          dueDate: invoiceFormData.dueDate.toISOString(),
+          notes: invoiceFormData.notes,
+          razorpayLink: invoiceFormData.razorpayLink,
+      };
+      console.log("TasksPage: Creating new invoice object:", JSON.stringify(newInvoice, null, 2));
 
-    // Mark tasks as billed
-    const billedTaskIds = invoiceFormData.selectedTasks.map((t) => t.taskId);
-    setTasks(prevTasks => 
-        prevTasks.map(task => 
-            billedTaskIds.includes(task.id) ? { ...task, billed: true } : task
-        )
-    );
-    
-    toast({ title: "Invoice Created", description: `New invoice ${newInvoice.invoiceNumber} created and tasks marked as billed.` });
-    setIsInvoiceFormOpen(false);
-    setInvoiceDataForForm(undefined);
-    setSelectedClientForInvoice(undefined);
+      setGlobalInvoices(prev => [newInvoice, ...prev]);
+
+      const billedTaskIds = invoiceFormData.selectedTasks.map((t) => t.taskId);
+      setTasks(prevTasks =>
+          prevTasks.map(task =>
+              billedTaskIds.includes(task.id) ? { ...task, billed: true } : task
+          )
+      );
+
+      toast({ title: "Invoice Created", description: `New invoice ${newInvoice.invoiceNumber} created and tasks marked as billed.` });
+      setIsInvoiceFormOpen(false);
+      setInvoiceDataForForm(undefined);
+      setSelectedClientForInvoice(undefined);
+    } catch (error) {
+      console.error("Error in handleSaveInvoice:", error);
+      toast({ variant: "destructive", title: "Error Saving Invoice", description: `An unexpected error occurred: ${error instanceof Error ? error.message : String(error)}` });
+    }
   };
 
 
   return (
     <>
-      <PageHeader 
-        title="Tasks" 
+      <PageHeader
+        title="Tasks"
         description="Log and manage tasks performed for your clients."
         actions={
           <TaskFormDialog
@@ -121,28 +136,25 @@ export default function TasksPage() {
             trigger={<Button><PlusCircle className="mr-2 h-4 w-4" /> Log New Task</Button>}
             onSave={handleSaveTask}
           />
-        } 
+        }
       />
-      <TaskListTable 
-        tasks={tasks} 
-        clients={clients} 
-        services={services} 
+      <TaskListTable
+        tasks={tasks}
+        clients={clients}
+        services={services}
         onSaveTask={handleSaveTask}
         onCreateInvoice={handleCreateInvoiceFromTasks}
       />
        {isInvoiceFormOpen && selectedClientForInvoice && invoiceDataForForm && (
         <InvoiceFormDialog
-          // Pass the pre-filled invoice data. `invoiceDataForForm.tasks` will be used for `selectedTasks` in the dialog.
-          invoice={invoiceDataForForm as Partial<Invoice>} 
+          invoice={invoiceDataForForm as Partial<Invoice>}
           clients={clients}
-          // Pass all unbilled tasks for the selected client so the dialog can display them if needed,
-          // though primary task selection happens here. The dialog will use `invoiceDataForForm.tasks` to pre-check.
           allTasksForClient={tasks.filter(t => t.clientId === selectedClientForInvoice.id && (!t.billed || (invoiceDataForForm.tasks || []).some(it => it.taskId === t.id)))}
-          trigger={<></>} 
+          trigger={<React.Fragment />}
           onSave={handleSaveInvoice}
-          forceOpen={isInvoiceFormOpen} 
+          forceOpen={isInvoiceFormOpen}
           onOpenChange={(open) => {
-            setIsInvoiceFormOpen(open); // This will set it to false when dialog closes
+            setIsInvoiceFormOpen(open);
             if (!open) {
               setInvoiceDataForForm(undefined);
               setSelectedClientForInvoice(undefined);

@@ -1,15 +1,20 @@
+"use client";
+
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import Link from "next/link";
+import { useRouter } from 'next/navigation'; // Import useRouter
 
 export default function ClientLoginPage() {
+  const router = useRouter(); // Initialize useRouter
+
   // In a real app, this would be handled by an auth provider
   const handleLogin = () => {
     // For demo, redirect to client dashboard
     // Replace with actual auth logic
-    window.location.href = "/portal/dashboard";
+    router.push("/portal/dashboard"); // Use router.push for navigation
   };
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-primary/10 via-background to-accent/10 p-4">

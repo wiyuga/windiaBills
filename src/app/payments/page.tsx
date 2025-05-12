@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input"; // For date range potentially, or use Calendar
+import { Label } from "@/components/ui/label"; // Import Label component
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
@@ -53,20 +54,18 @@ export default function PaymentsPage() {
     return filteredInvoices.reduce((sum, inv) => sum + (inv.finalAmount || inv.totalAmount), 0);
   }, [filteredInvoices]);
 
-  const currentMonthRevenue = useMemo(() => {
-    if (selectedClient !== 'all' || dateRange.from || dateRange.to) return 0; // Only if no filters are active
-    
+  const recentMonthRevenue = useMemo(() => { // Renamed from currentMonthRevenue for clarity
     const today = new Date();
-    const startOfCurrentMonth = startOfMonth(today);
-    const endOfCurrentMonth = endOfMonth(today);
+    const startOfRecentMonth = startOfMonth(today); // Can be adjusted to last 30 days, etc.
+    const endOfRecentMonth = endOfMonth(today);
     
     return allPaidInvoices
-      .filter(inv => isWithinInterval(parseISO(inv.issueDate), { start: startOfCurrentMonth, end: endOfCurrentMonth }))
+      .filter(inv => isWithinInterval(parseISO(inv.issueDate), { start: startOfRecentMonth, end: endOfRecentMonth }))
       .reduce((sum, inv) => sum + (inv.finalAmount || inv.totalAmount), 0);
-  }, [allPaidInvoices, selectedClient, dateRange]);
+  }, [allPaidInvoices]);
 
-  const displayRevenue = (selectedClient !== 'all' || dateRange.from || dateRange.to) ? totalRevenueFiltered : currentMonthRevenue;
-  const displayRevenueLabel = (selectedClient !== 'all' || dateRange.from || dateRange.to) ? "Filtered Revenue" : "Current Month Revenue";
+  const displayRevenue = (selectedClient !== 'all' || dateRange.from || dateRange.to) ? totalRevenueFiltered : recentMonthRevenue;
+  const displayRevenueLabel = (selectedClient !== 'all' || dateRange.from || dateRange.to) ? "Filtered Revenue" : "Recent Month Revenue";
 
 
   return (
@@ -85,7 +84,7 @@ export default function PaymentsPage() {
                 <div className="text-3xl font-bold">${displayRevenue.toFixed(2)}</div>
                 <p className="text-xs text-muted-foreground">
                     { (selectedClient === 'all' && !dateRange.from && !dateRange.to) 
-                        ? "Total revenue for the current month."
+                        ? "Total revenue for the current month." // This label could be more dynamic if needed
                         : "Total revenue based on applied filters."
                     }
                 </p>

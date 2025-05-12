@@ -12,9 +12,10 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
-import type { Invoice, Client } from '@/lib/types';
+import type { Invoice, Client, Task } from '@/lib/types'; // Task type needed for line item details
 import { format } from 'date-fns';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { mockTasks } from '@/lib/placeholder-data'; // Temporary for full task details if needed
 
 interface InvoiceDetailsDialogProps {
   invoice: Invoice;
@@ -25,9 +26,10 @@ interface InvoiceDetailsDialogProps {
 export default function InvoiceDetailsDialog({ invoice, client, trigger }: InvoiceDetailsDialogProps) {
   const [open, setOpen] = React.useState(false);
 
-  const subTotal = invoice.totalAmount; // Assuming totalAmount is pre-tax
+  const subTotal = invoice.totalAmount; 
   const taxAmount = invoice.taxAmount || 0;
   const finalAmount = invoice.finalAmount || (subTotal + taxAmount);
+  const currencySymbol = client?.currency === 'INR' ? '₹' : '$';
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -53,6 +55,7 @@ export default function InvoiceDetailsDialog({ invoice, client, trigger }: Invoi
               <p className="text-sm text-muted-foreground">Status: <span className="font-medium capitalize text-primary">{invoice.status}</span></p>
               <p className="text-sm text-muted-foreground">Issue Date: {format(new Date(invoice.issueDate), 'MMM dd, yyyy')}</p>
               <p className="text-sm text-muted-foreground">Due Date: {format(new Date(invoice.dueDate), 'MMM dd, yyyy')}</p>
+              {client?.projectName && <p className="text-sm text-muted-foreground">Project: {client.projectName}</p>}
             </div>
           </div>
 
@@ -66,22 +69,27 @@ export default function InvoiceDetailsDialog({ invoice, client, trigger }: Invoi
                   <tr>
                     <th className="p-2 text-left font-medium">Description</th>
                     <th className="p-2 text-right font-medium">Hours</th>
-                    <th className="p-2 text-right font-medium">Rate</th>
-                    <th className="p-2 text-right font-medium">Amount</th>
+                    <th className="p-2 text-right font-medium">Rate ({currencySymbol})</th>
+                    <th className="p-2 text-right font-medium">Amount ({currencySymbol})</th>
                   </tr>
                 </thead>
                 <tbody>
                   {invoice.tasks.map((taskItem, index) => {
-                    const rate = client?.hourlyRate || 0; // Fallback rate
+                    const rate = client?.hourlyRate || 0; 
                     const amount = taskItem.hours * rate;
                     return (
-                    <tr key={taskItem.id || index} className="border-b last:border-b-0">
+                    <tr key={taskItem.taskId || index} className="border-b last:border-b-0">
                       <td className="p-2">{taskItem.description}</td>
                       <td className="p-2 text-right">{taskItem.hours.toFixed(1)}</td>
-                      <td className="p-2 text-right">${rate.toFixed(2)}</td>
-                      <td className="p-2 text-right">${amount.toFixed(2)}</td>
+                      <td className="p-2 text-right">{rate.toFixed(2)}</td>
+                      <td className="p-2 text-right">{amount.toFixed(2)}</td>
                     </tr>
                   )})}
+                   {invoice.tasks.length === 0 && (
+                    <tr>
+                        <td colSpan={4} className="p-4 text-center text-muted-foreground">No tasks found for this invoice.</td>
+                    </tr>
+                   )}
                 </tbody>
               </table>
             </div>
@@ -101,17 +109,17 @@ export default function InvoiceDetailsDialog({ invoice, client, trigger }: Invoi
             <div className="space-y-1 text-right">
                 <div className="flex justify-between">
                 <span className="text-sm text-muted-foreground">Subtotal:</span>
-                <span className="text-sm text-foreground">${subTotal.toFixed(2)}</span>
+                <span className="text-sm text-foreground">{currencySymbol}{subTotal.toFixed(2)}</span>
                 </div>
                 {invoice.taxAmount !== undefined && (
                 <div className="flex justify-between">
                     <span className="text-sm text-muted-foreground">Tax:</span>
-                    <span className="text-sm text-foreground">${taxAmount.toFixed(2)}</span>
+                    <span className="text-sm text-foreground">{currencySymbol}{taxAmount.toFixed(2)}</span>
                 </div>
                 )}
                 <div className="flex justify-between font-semibold text-lg">
                 <span className="text-foreground">Total:</span>
-                <span className="text-primary">${finalAmount.toFixed(2)}</span>
+                <span className="text-primary">{currencySymbol}{finalAmount.toFixed(2)}</span>
                 </div>
             </div>
           </div>

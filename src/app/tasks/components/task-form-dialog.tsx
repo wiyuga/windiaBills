@@ -20,7 +20,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { CalendarIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
-import type { Task, Client } from '@/lib/types';
+import type { Task, Client, Service } from '@/lib/types';
 import { useForm, Controller, SubmitHandler } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -34,6 +34,8 @@ const taskSchema = z.object({
   ),
   date: z.date({ required_error: "Date is required." }),
   billed: z.boolean().default(false),
+  serviceId: z.string().min(1, { message: "Service is required." }),
+  platform: z.enum(['Mobile', 'Web', 'Other']),
 });
 
 type TaskFormData = z.infer<typeof taskSchema>;
@@ -41,49 +43,54 @@ type TaskFormData = z.infer<typeof taskSchema>;
 interface TaskFormDialogProps {
   task?: Task;
   clients: Client[];
+  services: Service[];
   trigger: React.ReactNode;
-  onSave?: (data: TaskFormData) => void;
+  onSave?: (data: TaskFormData, taskId?: string) => void;
 }
 
-export default function TaskFormDialog({ task, clients, trigger, onSave }: TaskFormDialogProps) {
+export default function TaskFormDialog({ task, clients, services, trigger, onSave }: TaskFormDialogProps) {
   const [open, setOpen] = useState(false);
   const { control, register, handleSubmit, reset, formState: { errors } } = useForm<TaskFormData>({
     resolver: zodResolver(taskSchema),
     defaultValues: task ? {
       ...task,
-      date: new Date(task.date), // Convert string date to Date object
-      hours: task.hours,
+      date: new Date(task.date),
     } : {
       clientId: '',
       description: '',
       hours: 0.0,
       date: new Date(),
       billed: false,
+      serviceId: '',
+      platform: 'Web',
     },
   });
 
   useEffect(() => {
-    if (task && open) {
-      reset({
-        ...task,
-        date: new Date(task.date),
-        hours: task.hours,
-      });
-    } else if (!task && open) {
-      reset({
-        clientId: '',
-        description: '',
-        hours: 0.0,
-        date: new Date(),
-        billed: false,
-      });
+     if (open) {
+        if (task) {
+        reset({
+            ...task,
+            date: new Date(task.date),
+        });
+        } else {
+        reset({
+            clientId: '',
+            description: '',
+            hours: 0.0,
+            date: new Date(),
+            billed: false,
+            serviceId: '',
+            platform: 'Web',
+        });
+        }
     }
   }, [task, open, reset]);
 
   const onSubmit: SubmitHandler<TaskFormData> = (data) => {
     console.log("Task data:", data);
     if (onSave) {
-      onSave(data);
+      onSave(data, task?.id);
     }
     setOpen(false);
   };
@@ -167,6 +174,48 @@ export default function TaskFormDialog({ task, clients, trigger, onSave }: TaskF
               )}
             />
             {errors.date && <p className="col-start-2 col-span-3 text-xs text-destructive mt-1">{errors.date.message}</p>}
+          </div>
+
+           <div className="grid grid-cols-4 items-center gap-4">
+            <Label htmlFor="serviceId" className="text-right">Service</Label>
+            <Controller
+              name="serviceId"
+              control={control}
+              render={({ field }) => (
+                <Select onValueChange={field.onChange} defaultValue={field.value} value={field.value}>
+                  <SelectTrigger id="serviceId" className={`col-span-3 ${errors.serviceId ? 'border-destructive' : ''}`}>
+                    <SelectValue placeholder="Select a service" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {services.map(service => (
+                      <SelectItem key={service.id} value={service.id}>{service.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            />
+            {errors.serviceId && <p className="col-start-2 col-span-3 text-xs text-destructive mt-1">{errors.serviceId.message}</p>}
+          </div>
+
+          <div className="grid grid-cols-4 items-center gap-4">
+            <Label htmlFor="platform" className="text-right">Platform</Label>
+            <Controller
+              name="platform"
+              control={control}
+              render={({ field }) => (
+                <Select onValueChange={field.onChange} defaultValue={field.value} value={field.value}>
+                  <SelectTrigger id="platform" className={`col-span-3 ${errors.platform ? 'border-destructive' : ''}`}>
+                    <SelectValue placeholder="Select platform" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Web">Web</SelectItem>
+                    <SelectItem value="Mobile">Mobile</SelectItem>
+                    <SelectItem value="Other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+            />
+            {errors.platform && <p className="col-start-2 col-span-3 text-xs text-destructive mt-1">{errors.platform.message}</p>}
           </div>
           
           <DialogFooter>

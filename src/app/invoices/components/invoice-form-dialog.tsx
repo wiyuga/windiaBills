@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -9,21 +9,21 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
-import { CalendarIcon, PlusCircle, Trash2 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { CalendarIcon, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
-import type { Invoice, Client, Task } from '@/lib/types';
-import { useForm, Controller, SubmitHandler, useFieldArray } from 'react-hook-form';
+import type { Invoice, Client, Task, InvoiceTaskItem, Service } from '@/lib/types';
+import { useForm, Controller, SubmitHandler } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
+import { mockServices } from '@/lib/placeholder-data'; // For service name lookup
 
-const lineItemSchema = z.object({
-  description: z.string().min(1, "Description is required"),
-  hours: z.preprocess(
-    (val) => parseFloat(z.string().parse(val) || "0"),
-    z.number().min(0.1, "Hours must be positive")
-  ),
-  // In a real app, you might link to task ID. Here, it's manual.
+const invoiceTaskItemSchema = z.object({
+  taskId: z.string(),
+  description: z.string(),
+  hours: z.number(),
 });
 
 const invoiceSchema = z.object({
@@ -31,112 +31,181 @@ const invoiceSchema = z.object({
   clientId: z.string().min(1, "Client is required."),
   issueDate: z.date({ required_error: "Issue date is required." }),
   dueDate: z.date({ required_error: "Due date is required." }),
-  tasks: z.array(lineItemSchema).min(1, "At least one line item is required."),
+  selectedTasks: z.array(invoiceTaskItemSchema).min(1, "At least one task must be selected for the invoice."),
   status: z.enum(['draft', 'sent', 'paid', 'overdue']).default('draft'),
   notes: z.string().optional(),
   razorpayLink: z.string().url().optional().or(z.literal('')),
-  taxRate: z.preprocess( // Optional tax rate as percentage
+  taxRate: z.preprocess( 
     (val) => parseFloat(z.string().parse(val) || "0"),
     z.number().min(0).max(100).optional()
   ),
 });
 
-type InvoiceFormData = z.infer<typeof invoiceSchema>;
+type InvoiceFormData = Omit<z.infer<typeof invoiceSchema>, 'selectedTasks'> & { tasks: InvoiceTaskItem[] };
+
 
 interface InvoiceFormDialogProps {
-  invoice?: Invoice;
+  invoice?: Partial<Invoice>; // Can be partial if creating from selected tasks
   clients: Client[];
-  tasks: Task[]; // All tasks, for potential selection (not fully implemented for auto-add)
+  allTasksForClient?: Task[]; // All tasks for the selected client (passed when creating from Tasks page)
   trigger: React.ReactNode;
-  onSave?: (data: InvoiceFormData) => void;
+  onSave?: (data: InvoiceFormData, invoiceId?: string) => void;
+  forceOpen?: boolean; // To control dialog from outside
+  onOpenChange?: (open: boolean) => void; // To control dialog from outside
 }
 
-export default function InvoiceFormDialog({ invoice, clients, tasks, trigger, onSave }: InvoiceFormDialogProps) {
+export default function InvoiceFormDialog({ 
+    invoice, 
+    clients, 
+    allTasksForClient, 
+    trigger, 
+    onSave,
+    forceOpen,
+    onOpenChange
+}: InvoiceFormDialogProps) {
   const [open, setOpen] = useState(false);
-  const { control, register, handleSubmit, reset, watch, setValue, formState: { errors } } = useForm<InvoiceFormData>({
+  const [unpaidTasksForSelectedClient, setUnpaidTasksForSelectedClient] = useState<Task[]>([]);
+  
+  const { control, register, handleSubmit, reset, watch, setValue, getValues, formState: { errors } } = useForm<InvoiceFormData>({
     resolver: zodResolver(invoiceSchema),
-    defaultValues: invoice ? {
-      ...invoice,
-      issueDate: new Date(invoice.issueDate),
-      dueDate: new Date(invoice.dueDate),
-      tasks: invoice.tasks.map(t => ({ description: t.description, hours: t.hours })), // Simplified
-      taxRate: invoice.taxAmount && invoice.totalAmount ? (invoice.taxAmount / invoice.totalAmount) * 100 : 0,
-    } : {
+    defaultValues: {
       invoiceNumber: `INV-${new Date().getFullYear()}-${String(Math.floor(Math.random()*9000)+1000).padStart(4, '0')}`,
-      clientId: '',
-      issueDate: new Date(),
-      dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), // Due in 14 days
-      tasks: [{ description: '', hours: 1 }],
-      status: 'draft',
-      notes: '',
-      razorpayLink: '',
-      taxRate: 10, // Default 10% tax
+      clientId: invoice?.clientId || '',
+      issueDate: invoice?.issueDate ? new Date(invoice.issueDate) : new Date(),
+      dueDate: invoice?.dueDate ? new Date(invoice.dueDate) : new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+      tasks: invoice?.tasks || [], // This will be 'selectedTasks' in the form schema
+      status: invoice?.status || 'draft',
+      notes: invoice?.notes || '',
+      razorpayLink: invoice?.razorpayLink || '',
+      taxRate: invoice?.taxAmount && invoice?.totalAmount ? (invoice.taxAmount / invoice.totalAmount) * 100 : 10,
     },
   });
 
-  const { fields, append, remove } = useFieldArray({
-    control,
-    name: "tasks"
-  });
+  const watchedClientId = watch("clientId");
+  const watchedSelectedTasks = watch("tasks"); // This is the 'selectedTasks' field from schema
+  const watchedTaxRate = watch("taxRate");
+
+  // Determine if the dialog should be open
+  const dialogOpen = forceOpen !== undefined ? forceOpen : open;
+  const setDialogOpen = forceOpen !== undefined && onOpenChange ? onOpenChange : setOpen;
+
 
   useEffect(() => {
-    if (invoice && open) {
-      reset({
-        ...invoice,
-        issueDate: new Date(invoice.issueDate),
-        dueDate: new Date(invoice.dueDate),
-        tasks: invoice.tasks.map(t => ({ description: t.description, hours: t.hours })),
-        taxRate: invoice.taxAmount && invoice.totalAmount ? (invoice.taxAmount / invoice.totalAmount) * 100 : 0,
-      });
-    } else if (!invoice && open) {
-      reset({
+    if (dialogOpen) {
+      const defaultValues = {
         invoiceNumber: `INV-${new Date().getFullYear()}-${String(Math.floor(Math.random()*9000)+1000).padStart(4, '0')}`,
         clientId: '',
         issueDate: new Date(),
-        dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
-        tasks: [{ description: '', hours: 1 }],
-        status: 'draft',
+        dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), // Due in 14 days
+        tasks: [],
+        status: 'draft' as 'draft',
         notes: '',
         razorpayLink: '',
-        taxRate: 10,
-      });
+        taxRate: 10, // Default 10% tax
+      };
+
+      if (invoice) { // Editing existing or pre-filled from Tasks page
+        reset({
+          ...defaultValues, // Start with defaults
+          ...invoice, // Overlay with passed invoice data
+          issueDate: invoice.issueDate ? new Date(invoice.issueDate) : new Date(),
+          dueDate: invoice.dueDate ? new Date(invoice.dueDate) : new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+          tasks: invoice.tasks || [], // Ensure tasks is an array
+          // Calculate taxRate if invoice has amounts
+          taxRate: invoice.taxAmount && invoice.totalAmount && invoice.totalAmount > 0 
+                   ? parseFloat(((invoice.taxAmount / invoice.totalAmount) * 100).toFixed(2))
+                   : 10,
+        });
+        if (invoice.clientId && allTasksForClient) { // Pre-filled from Tasks page
+           setUnpaidTasksForSelectedClient(allTasksForClient.filter(t => !t.billed));
+        } else if (invoice.clientId) { // Editing existing, fetch tasks (mock logic)
+            // MOCK: fetch tasks for this client (in real app, this would be an API call)
+            const tasksForThisClient = mockTasks.filter(t => t.clientId === invoice.clientId && !t.billed);
+            setUnpaidTasksForSelectedClient(tasksForThisClient);
+        }
+
+
+      } else { // Creating new, blank invoice
+        reset(defaultValues);
+        setUnpaidTasksForSelectedClient([]);
+      }
     }
-  }, [invoice, open, reset]);
+  }, [invoice, dialogOpen, reset, allTasksForClient]);
   
-  const watchedClientId = watch("clientId");
-  const watchedTasks = watch("tasks");
-  const watchedTaxRate = watch("taxRate");
 
-  const selectedClient = clients.find(c => c.id === watchedClientId);
-  const subTotal = watchedTasks.reduce((sum, task) => {
-    const rate = selectedClient?.hourlyRate || 0;
-    return sum + (task.hours * rate);
-  }, 0);
-  const taxAmount = subTotal * ((watchedTaxRate || 0) / 100);
-  const totalAmount = subTotal + taxAmount;
-
-
-  const onSubmit: SubmitHandler<InvoiceFormData> = (data) => {
-    console.log("Invoice data:", data, { subTotal, taxAmount, totalAmount });
-    // Add subTotal, taxAmount, totalAmount to the data before saving if needed by backend
-    if (onSave) {
-      onSave(data);
+  useEffect(() => {
+    if (watchedClientId && !allTasksForClient) { // If client changes and not pre-filled
+      // MOCK: Fetch unpaid tasks for the selected client
+      const tasks = mockTasks.filter(t => t.clientId === watchedClientId && !t.billed);
+      setUnpaidTasksForSelectedClient(tasks);
+      setValue("tasks", []); // Reset selected tasks when client changes
+    } else if (!watchedClientId) {
+      setUnpaidTasksForSelectedClient([]);
+      setValue("tasks", []);
     }
-    setOpen(false);
+  }, [watchedClientId, setValue, allTasksForClient]);
+
+  const selectedClientFull = clients.find(c => c.id === watchedClientId);
+
+  const subTotal = useMemo(() => {
+    if (!selectedClientFull || !watchedSelectedTasks) return 0;
+    return watchedSelectedTasks.reduce((sum, taskItem) => {
+      return sum + (taskItem.hours * selectedClientFull.hourlyRate);
+    }, 0);
+  }, [watchedSelectedTasks, selectedClientFull]);
+
+  const taxAmount = useMemo(() => {
+    return subTotal * ((watchedTaxRate || 0) / 100);
+  }, [subTotal, watchedTaxRate]);
+  
+  const totalAmount = useMemo(() => {
+    return subTotal + taxAmount;
+  }, [subTotal, taxAmount]);
+
+  const handleTaskSelection = (taskId: string, checked: boolean) => {
+    const task = unpaidTasksForSelectedClient.find(t => t.id === taskId);
+    if (!task) return;
+
+    const currentSelectedTasks = getValues("tasks") || [];
+    if (checked) {
+      setValue("tasks", [...currentSelectedTasks, { taskId: task.id, description: task.description, hours: task.hours }]);
+    } else {
+      setValue("tasks", currentSelectedTasks.filter(t => t.taskId !== taskId));
+    }
   };
 
+  const onSubmit: SubmitHandler<InvoiceFormData> = (data) => {
+     // The form data uses 'tasks' for the selected task items.
+    // The schema validation uses 'selectedTasks' but we map it before submission.
+    const finalData = {
+        ...data,
+        totalAmount: parseFloat(subTotal.toFixed(2)),
+        taxAmount: parseFloat(taxAmount.toFixed(2)),
+        finalAmount: parseFloat(totalAmount.toFixed(2)),
+    };
+    console.log("Invoice data:", finalData);
+    if (onSave) {
+      onSave(finalData, invoice?.id);
+    }
+    setDialogOpen(false);
+  };
+  
+  const getServiceName = (serviceId: string) => mockServices.find(s => s.id === serviceId)?.name || 'N/A';
+
+
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent className="sm:max-w-xl md:max-w-2xl lg:max-w-3xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-xl md:max-w-2xl lg:max-w-4xl max-h-[90vh]">
         <DialogHeader>
-          <DialogTitle>{invoice ? "Edit Invoice" : "Create New Invoice"}</DialogTitle>
+          <DialogTitle>{invoice?.id ? "Edit Invoice" : "Create New Invoice"}</DialogTitle>
           <DialogDescription>
-            {invoice ? "Update the invoice details below." : "Fill in the details for the new invoice."}
+            {invoice?.id ? "Update the invoice details below." : "Fill in the details for the new invoice."}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit(onSubmit)} className="grid gap-4 py-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <ScrollArea className="max-h-[calc(80vh-200px)] p-1 pr-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
             <div>
               <Label htmlFor="invoiceNumber">Invoice #</Label>
               <Input id="invoiceNumber" {...register("invoiceNumber")} className={errors.invoiceNumber ? 'border-destructive' : ''}/>
@@ -148,7 +217,20 @@ export default function InvoiceFormDialog({ invoice, clients, tasks, trigger, on
                 name="clientId"
                 control={control}
                 render={({ field }) => (
-                  <Select onValueChange={field.onChange} defaultValue={field.value} value={field.value}>
+                  <Select 
+                    onValueChange={(value) => {
+                        field.onChange(value);
+                        // If not pre-filled from Tasks page, clear tasks and fetch new ones
+                        if (!allTasksForClient) {
+                            setValue("tasks", []); 
+                            const tasks = mockTasks.filter(t => t.clientId === value && !t.billed);
+                            setUnpaidTasksForSelectedClient(tasks);
+                        }
+                    }} 
+                    defaultValue={field.value} 
+                    value={field.value}
+                    disabled={!!allTasksForClient || !!invoice?.clientId} // Disable if client is pre-set
+                    >
                     <SelectTrigger id="clientId" className={errors.clientId ? 'border-destructive' : ''}><SelectValue placeholder="Select a client" /></SelectTrigger>
                     <SelectContent>{clients.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
                   </Select>
@@ -172,30 +254,39 @@ export default function InvoiceFormDialog({ invoice, clients, tasks, trigger, on
             </div>
           </div>
 
-          <div className="my-4">
-            <h3 className="text-lg font-medium mb-2">Line Items</h3>
-            {fields.map((item, index) => (
-              <div key={item.id} className="grid grid-cols-[1fr_100px_auto] gap-2 mb-2 items-start">
-                <div>
-                  <Label htmlFor={`tasks.${index}.description`} className="sr-only">Description</Label>
-                  <Input {...register(`tasks.${index}.description`)} placeholder="Task description" className={errors.tasks?.[index]?.description ? 'border-destructive' : ''} />
-                  {errors.tasks?.[index]?.description && <p className="text-xs text-destructive mt-1">{errors.tasks?.[index]?.description?.message}</p>}
+          {watchedClientId && (
+            <div className="my-4">
+              <h3 className="text-lg font-medium mb-2">Select Tasks to Invoice</h3>
+              {unpaidTasksForSelectedClient.length > 0 ? (
+                <ScrollArea className="h-64 rounded-md border p-2">
+                  {unpaidTasksForSelectedClient.map((task) => (
+                    <div key={task.id} className="flex items-center space-x-3 p-2 hover:bg-muted/50 rounded-md">
+                      <Checkbox
+                        id={`task-${task.id}`}
+                        checked={watchedSelectedTasks?.some(t => t.taskId === task.id)}
+                        onCheckedChange={(checked) => handleTaskSelection(task.id, !!checked)}
+                      />
+                      <Label htmlFor={`task-${task.id}`} className="flex-1 cursor-pointer">
+                        <div className="flex justify-between items-center">
+                            <span className="font-normal">{task.description}</span>
+                            <span className="text-xs text-muted-foreground">({getServiceName(task.serviceId)})</span>
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {task.hours} hrs on {format(new Date(task.date), "MMM dd, yyyy")} - Platform: {task.platform}
+                        </div>
+                      </Label>
+                    </div>
+                  ))}
+                </ScrollArea>
+              ) : (
+                <div className="text-sm text-muted-foreground p-4 border rounded-md flex items-center gap-2">
+                    <AlertTriangle className="h-5 w-5 text-destructive" />
+                    No unbilled tasks found for this client.
                 </div>
-                <div>
-                  <Label htmlFor={`tasks.${index}.hours`} className="sr-only">Hours</Label>
-                  <Input type="number" step="0.1" {...register(`tasks.${index}.hours`)} placeholder="Hours" className={errors.tasks?.[index]?.hours ? 'border-destructive' : ''} />
-                   {errors.tasks?.[index]?.hours && <p className="text-xs text-destructive mt-1">{errors.tasks?.[index]?.hours?.message}</p>}
-                </div>
-                <Button type="button" variant="ghost" size="icon" onClick={() => remove(index)} className="text-destructive hover:text-destructive-foreground hover:bg-destructive mt-1">
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
-            ))}
-            {errors.tasks && typeof errors.tasks.message === 'string' && <p className="text-xs text-destructive mt-1">{errors.tasks.message}</p>}
-            <Button type="button" variant="outline" size="sm" onClick={() => append({ description: '', hours: 1 })}>
-              <PlusCircle className="mr-2 h-4 w-4" /> Add Line Item
-            </Button>
-          </div>
+              )}
+              {errors.tasks && <p className="text-xs text-destructive mt-1">{errors.tasks.message}</p>}
+            </div>
+          )}
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
@@ -233,14 +324,17 @@ export default function InvoiceFormDialog({ invoice, clients, tasks, trigger, on
           </div>
 
           <div className="mt-4 p-4 bg-muted/50 rounded-md">
-            <div className="flex justify-between text-sm"><span>Subtotal:</span> <span>${subTotal.toFixed(2)}</span></div>
-            <div className="flex justify-between text-sm"><span>Tax ({watchedTaxRate || 0}%):</span> <span>${taxAmount.toFixed(2)}</span></div>
-            <div className="flex justify-between font-semibold text-lg mt-1"><span>Total:</span> <span>${totalAmount.toFixed(2)}</span></div>
+            <div className="flex justify-between text-sm"><span>Subtotal:</span> <span>{selectedClientFull?.currency === 'INR' ? '₹' : '$'}{subTotal.toFixed(2)}</span></div>
+            <div className="flex justify-between text-sm"><span>Tax ({watchedTaxRate || 0}%):</span> <span>{selectedClientFull?.currency === 'INR' ? '₹' : '$'}{taxAmount.toFixed(2)}</span></div>
+            <div className="flex justify-between font-semibold text-lg mt-1"><span>Total:</span> <span>{selectedClientFull?.currency === 'INR' ? '₹' : '$'}{totalAmount.toFixed(2)}</span></div>
           </div>
+          </ScrollArea>
 
           <DialogFooter className="mt-4">
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button type="submit">{invoice ? "Save Changes" : "Create Invoice"}</Button>
+            <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
+            <Button type="submit" disabled={!watchedClientId || (watchedSelectedTasks || []).length === 0}>
+                {invoice?.id ? "Save Changes" : "Create Invoice"}
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>

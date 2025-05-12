@@ -10,8 +10,9 @@ import {
   ListChecks,
   FileText,
   CreditCard,
-  Settings as SettingsIcon, // Renamed to avoid conflict if Settings is a component
+  Settings as SettingsIcon, 
   LogIn,
+  Briefcase, // Icon for Services
 } from 'lucide-react';
 
 const navItems = [
@@ -20,6 +21,7 @@ const navItems = [
   { href: '/tasks', label: 'Tasks', icon: ListChecks, tooltip: "Tasks" },
   { href: '/invoices', label: 'Invoices', icon: FileText, tooltip: "Invoices" },
   { href: '/payments', label: 'Payments', icon: CreditCard, tooltip: "Payments" },
+  { href: '/services', label: 'Services', icon: Briefcase, tooltip: "Services"}, // New
   { href: '/settings', label: 'Settings', icon: SettingsIcon, tooltip: "Settings" },
   { href: '/portal/login', label: 'Client Portal', icon: LogIn, tooltip: "Client Portal" },
 ];
@@ -35,9 +37,9 @@ export default function SidebarNav() {
             <SidebarMenuButton
               className={cn(
                 "w-full justify-start",
-                pathname === item.href ? "bg-sidebar-accent text-sidebar-accent-foreground" : ""
+                pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href)) ? "bg-sidebar-accent text-sidebar-accent-foreground" : ""
               )}
-              isActive={pathname === item.href}
+              isActive={pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href))}
               tooltip={{ children: item.tooltip, side: "right", align: "center" }}
               aria-label={item.label}
             >

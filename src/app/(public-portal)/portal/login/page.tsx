@@ -5,6 +5,12 @@ import { Label } from "@/components/ui/label";
 import Link from "next/link";
 
 export default function ClientLoginPage() {
+  // In a real app, this would be handled by an auth provider
+  const handleLogin = () => {
+    // For demo, redirect to client dashboard
+    // Replace with actual auth logic
+    window.location.href = "/portal/dashboard";
+  };
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-primary/10 via-background to-accent/10 p-4">
       <Card className="w-full max-w-sm shadow-2xl">
@@ -28,9 +34,13 @@ export default function ClientLoginPage() {
           </div>
         </CardContent>
         <CardFooter className="flex flex-col gap-3">
-          <Button className="w-full bg-accent hover:bg-accent/90 text-accent-foreground">Sign In</Button>
+          {/* In a real app, this button would trigger an authentication flow */}
+          <Button className="w-full bg-accent hover:bg-accent/90 text-accent-foreground" onClick={handleLogin}>Sign In</Button>
           <p className="text-xs text-center text-muted-foreground">
-            This is a demonstration login page. Authentication is not implemented.
+            New clients: check your email for an onboarding link to set your password.
+          </p>
+          <p className="text-xs text-center text-muted-foreground">
+            Authentication is for demonstration purposes.
           </p>
            <Link href="/" className="text-sm text-primary/80 hover:text-primary underline">
             &larr; Back to Admin App
@@ -40,7 +50,3 @@ export default function ClientLoginPage() {
     </div>
   );
 }
-
-// This page should ideally have its own layout, separate from the admin AppLayout.
-// For simplicity, we're not creating a separate layout for /portal routes in this iteration.
-// To do that, you'd create a (portal) route group with its own layout.tsx.

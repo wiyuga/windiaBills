@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -13,12 +14,13 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { CalendarIcon, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { format } from "date-fns";
+import { format, parseISO } from "date-fns";
 import type { Invoice, Client, Task, InvoiceTaskItem, Service } from '@/lib/types';
 import { useForm, Controller, SubmitHandler } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { mockServices, mockTasks as FallbackMockTasks } from '@/lib/placeholder-data'; // For service name lookup and fallback tasks
+import { dataStore } from '@/lib/data-store'; // Import dataStore to get fresh task list
 
 const invoiceTaskItemSchema = z.object({
   taskId: z.string(),
@@ -36,7 +38,7 @@ const invoiceSchema = z.object({
   notes: z.string().optional(),
   razorpayLink: z.string().url().optional().or(z.literal('')),
   taxRate: z.preprocess(
-    (val) => parseFloat(z.string().parse(val) || "0"),
+    (val) => parseFloat(z.string().parse(String(val)) || "0"), // Ensure val is string for parse
     z.number().min(0).max(100).optional()
   ),
 });
@@ -45,13 +47,14 @@ export type InvoiceFormData = z.infer<typeof invoiceSchema> & {
     totalAmount: number;
     taxAmount: number;
     finalAmount: number;
+    clientName?: string; // Added for consistency
 };
 
 
 interface InvoiceFormDialogProps {
-  invoice?: Partial<Invoice>;
+  invoice?: Partial<Invoice>; // Can be partial for new, full for edit
   clients: Client[];
-  allTasksForClient?: Task[];
+  allTasksForClient?: Task[]; // Tasks relevant to the selected/editing client
   trigger: React.ReactNode;
   onSave?: (data: InvoiceFormData, invoiceId?: string) => void;
   forceOpen?: boolean;
@@ -61,37 +64,24 @@ interface InvoiceFormDialogProps {
 export default function InvoiceFormDialog({
     invoice,
     clients,
-    allTasksForClient,
+    allTasksForClient, // These are pre-filtered tasks for the client
     trigger,
     onSave,
     forceOpen,
     onOpenChange
 }: InvoiceFormDialogProps) {
   const [open, setOpen] = useState(false);
+  // unpaidTasksForSelectedClient will be derived from allTasksForClient or fetched if needed
   const [unpaidTasksForSelectedClient, setUnpaidTasksForSelectedClient] = useState<Task[]>([]);
+
 
   const { control, register, handleSubmit, reset, watch, setValue, getValues, formState: { errors } } = useForm<InvoiceFormData>({
     resolver: zodResolver(invoiceSchema),
-    defaultValues: {
-      invoiceNumber: `INV-${new Date().getFullYear()}-${String(Math.floor(Math.random()*9000)+1000).padStart(4, '0')}`,
-      clientId: invoice?.clientId || '',
-      issueDate: invoice?.issueDate ? new Date(invoice.issueDate) : new Date(),
-      dueDate: invoice?.dueDate ? new Date(invoice.dueDate) : new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
-      selectedTasks: invoice?.tasks || [],
-      status: invoice?.status || 'draft',
-      notes: invoice?.notes || '',
-      razorpayLink: invoice?.razorpayLink || '',
-      taxRate: invoice?.taxAmount && invoice?.totalAmount && invoice.totalAmount > 0
-                 ? parseFloat(((invoice.taxAmount / (invoice.totalAmount - invoice.taxAmount)) * 100).toFixed(2))
-                 : 10,
-      totalAmount: 0,
-      taxAmount: 0,
-      finalAmount: 0,
-    },
+    // Default values are set in useEffect based on `invoice` prop
   });
 
   const watchedClientId = watch("clientId");
-  const watchedSelectedTasks = watch("selectedTasks");
+  const watchedSelectedTasks = watch("selectedTasks", []); // Default to empty array
   const watchedTaxRate = watch("taxRate");
 
   const dialogOpen = forceOpen !== undefined ? forceOpen : open;
@@ -99,80 +89,86 @@ export default function InvoiceFormDialog({
 
   useEffect(() => {
     if (dialogOpen) {
-      console.log("InvoiceFormDialog: Opening/Updating. Passed invoice prop:", JSON.stringify(invoice, null, 2));
-      const defaultValues = {
+      const defaultNewInvoiceValues = {
         invoiceNumber: `INV-${new Date().getFullYear()}-${String(Math.floor(Math.random()*9000)+1000).padStart(4, '0')}`,
         clientId: '',
         issueDate: new Date(),
-        dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+        dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), // 14 days from now
         selectedTasks: [] as InvoiceTaskItem[],
         status: 'draft' as 'draft',
         notes: '',
         razorpayLink: '',
-        taxRate: 10,
-        totalAmount:0, taxAmount:0, finalAmount:0,
+        taxRate: 10, // Default tax rate
       };
 
-      if (invoice) {
-        let taxRateInitial = 10;
-        if (invoice.taxAmount !== undefined && invoice.totalAmount !== undefined && invoice.totalAmount !== 0 && invoice.taxAmount !==0) {
-             const preTaxSubtotal = invoice.totalAmount - invoice.taxAmount;
-             if (preTaxSubtotal > 0) {
-                taxRateInitial = parseFloat(((invoice.taxAmount / preTaxSubtotal) * 100).toFixed(2));
-             } else if (invoice.totalAmount > 0) {
-                taxRateInitial = parseFloat(((invoice.taxAmount / invoice.totalAmount) * 100).toFixed(2));
-             }
+      if (invoice && Object.keys(invoice).length > 0) { // Editing or pre-filled new invoice
+        let taxRateInitial = 10; // Default
+        // Calculate taxRate from amounts if available and amounts are valid
+        if (invoice.taxAmount !== undefined && invoice.totalAmount !== undefined && invoice.totalAmount > 0) {
+          const preTaxSubtotal = invoice.finalAmount !== undefined ? (invoice.finalAmount - invoice.taxAmount) : invoice.totalAmount;
+           if (preTaxSubtotal > 0) {
+              taxRateInitial = parseFloat(((invoice.taxAmount / preTaxSubtotal) * 100).toFixed(2));
+           }
         }
-
-        const newFormValues = {
-          ...defaultValues,
-          invoiceNumber: invoice.invoiceNumber || defaultValues.invoiceNumber,
-          clientId: invoice.clientId || defaultValues.clientId,
-          issueDate: invoice.issueDate ? new Date(invoice.issueDate) : defaultValues.issueDate,
-          dueDate: invoice.dueDate ? new Date(invoice.dueDate) : defaultValues.dueDate,
-          selectedTasks: invoice.tasks || [], // This is crucial: invoice.tasks should be InvoiceTaskItem[]
-          status: invoice.status || defaultValues.status,
-          notes: invoice.notes || defaultValues.notes,
-          razorpayLink: invoice.razorpayLink || defaultValues.razorpayLink,
+        
+        const formValues = {
+          invoiceNumber: invoice.invoiceNumber || defaultNewInvoiceValues.invoiceNumber,
+          clientId: invoice.clientId || defaultNewInvoiceValues.clientId,
+          issueDate: invoice.issueDate ? (typeof invoice.issueDate === 'string' ? parseISO(invoice.issueDate) : invoice.issueDate) : defaultNewInvoiceValues.issueDate,
+          dueDate: invoice.dueDate ? (typeof invoice.dueDate === 'string' ? parseISO(invoice.dueDate) : invoice.dueDate) : defaultNewInvoiceValues.dueDate,
+          selectedTasks: invoice.tasks || defaultNewInvoiceValues.selectedTasks,
+          status: invoice.status || defaultNewInvoiceValues.status,
+          notes: invoice.notes || defaultNewInvoiceValues.notes,
+          razorpayLink: invoice.razorpayLink || defaultNewInvoiceValues.razorpayLink,
           taxRate: taxRateInitial,
         };
-        console.log("InvoiceFormDialog: Resetting form with values:", JSON.stringify(newFormValues, null, 2));
-        reset(newFormValues);
+        reset(formValues);
 
-        if (newFormValues.clientId) { // Use clientId from newFormValues as it's the source of truth for the form now
-            const tasksForClient = allTasksForClient || FallbackMockTasks.filter(t => t.clientId === newFormValues.clientId && (!t.billed || (newFormValues.selectedTasks || []).some(it => it.taskId === t.id)));
-            setUnpaidTasksForSelectedClient(tasksForClient);
+        // If allTasksForClient is provided (e.g., from TasksPage for new invoice based on selection, or InvoicesPage for edit)
+        if (allTasksForClient) {
+            setUnpaidTasksForSelectedClient(allTasksForClient);
+        } else if (formValues.clientId) { // Fallback: if editing, and allTasksForClient not passed, fetch from store
+            const clientTasks = dataStore.getTasks().filter(t => t.clientId === formValues.clientId && (!t.billed || (formValues.selectedTasks || []).some(it => it.taskId === t.id)));
+            setUnpaidTasksForSelectedClient(clientTasks);
         } else {
             setUnpaidTasksForSelectedClient([]);
         }
-      } else {
-        console.log("InvoiceFormDialog: Resetting form with default values for new invoice.");
-        reset(defaultValues);
-        setUnpaidTasksForSelectedClient([]);
+
+      } else { // New invoice, not pre-filled
+        reset(defaultNewInvoiceValues);
+        setUnpaidTasksForSelectedClient([]); // No client selected yet
       }
     }
   }, [invoice, dialogOpen, reset, allTasksForClient, clients]);
 
 
   useEffect(() => {
-    if (watchedClientId) {
-      const tasks = allTasksForClient || FallbackMockTasks.filter(t => t.clientId === watchedClientId && (!t.billed || (watchedSelectedTasks || []).some(it => it.taskId === t.id)));
-      setUnpaidTasksForSelectedClient(tasks);
-       if (!invoice || invoice.clientId !== watchedClientId) {
+    // This effect updates the available tasks when the client ID changes,
+    // unless allTasksForClient is already provided (implying a specific set of tasks is intended).
+    if (watchedClientId && !allTasksForClient) {
+      const tasksFromStore = dataStore.getTasks();
+      const clientTasks = tasksFromStore.filter(t => 
+          t.clientId === watchedClientId && 
+          (!t.billed || (watchedSelectedTasks || []).some(it => it.taskId === t.id))
+      );
+      setUnpaidTasksForSelectedClient(clientTasks);
+      // If client changes, and it's not part of an initial load with pre-selected tasks, clear selected tasks.
+      if (!invoice || invoice.clientId !== watchedClientId) {
          setValue("selectedTasks", []);
        }
-    } else {
+    } else if (!watchedClientId) {
       setUnpaidTasksForSelectedClient([]);
       setValue("selectedTasks", []);
     }
   }, [watchedClientId, setValue, allTasksForClient, invoice, watchedSelectedTasks]);
+
 
   const selectedClientFull = clients.find(c => c.id === watchedClientId);
 
   const subTotal = useMemo(() => {
     if (!selectedClientFull || !watchedSelectedTasks) return 0;
     return watchedSelectedTasks.reduce((sum, taskItem) => {
-      return sum + (taskItem.hours * selectedClientFull.hourlyRate);
+      return sum + (taskItem.hours * (selectedClientFull.hourlyRate || 0));
     }, 0);
   }, [watchedSelectedTasks, selectedClientFull]);
 
@@ -197,36 +193,29 @@ export default function InvoiceFormDialog({
   };
 
   const onSubmit: SubmitHandler<InvoiceFormData> = (data) => {
-    console.log('InvoiceFormDialog onSubmit triggered. Data from form:', JSON.stringify(data, null, 2));
-    console.log('Calculated subTotal:', subTotal, 'taxAmount:', taxAmount, 'finalAmount:', finalAmount);
-    console.log('Client for amounts:', selectedClientFull ? selectedClientFull.name : "Not found");
-
     const finalData: InvoiceFormData = {
         ...data,
+        clientName: selectedClientFull?.name || '',
         totalAmount: parseFloat(subTotal.toFixed(2)),
         taxAmount: parseFloat(taxAmount.toFixed(2)),
         finalAmount: parseFloat(finalAmount.toFixed(2)),
     };
-    console.log("InvoiceFormDialog: Invoice data for submission (finalData):", JSON.stringify(finalData, null, 2));
     if (onSave) {
-      console.log("InvoiceFormDialog: Calling onSave prop function.");
-      onSave(finalData, invoice?.id);
-    } else {
-      console.warn("InvoiceFormDialog: onSave prop is undefined.");
+      onSave(finalData, invoice?.id); // invoice.id will be undefined for new invoices
     }
     setDialogOpen(false);
   };
 
   const getServiceName = (serviceId: string) => mockServices.find(s => s.id === serviceId)?.name || 'N/A';
-
-  if (forceOpen || open) { // Conditional console log to avoid spamming when dialog is closed
-      console.log('InvoiceFormDialog button disabled check: watchedClientId:', watchedClientId, 'watchedSelectedTasks length:', (watchedSelectedTasks || []).length, 'Errors:', JSON.stringify(errors));
-  }
-
-
+  
   return (
-    <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-      {forceOpen === undefined && <DialogTrigger asChild>{trigger}</DialogTrigger>}
+    <Dialog open={dialogOpen} onOpenChange={(isOpen) => {
+        setDialogOpen(isOpen);
+        if (!isOpen && onOpenChange) { // Also call external onOpenChange if dialog is closed
+            onOpenChange(false);
+        }
+    }}>
+      {(forceOpen === undefined || trigger !== null) && <DialogTrigger asChild>{trigger}</DialogTrigger>}
       <DialogContent className="sm:max-w-xl md:max-w-2xl lg:max-w-4xl max-h-[90vh]">
         <DialogHeader>
           <DialogTitle>{invoice?.id ? "Edit Invoice" : "Create New Invoice"}</DialogTitle>
@@ -235,7 +224,7 @@ export default function InvoiceFormDialog({
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit(onSubmit)} className="grid gap-4 py-4">
-        <ScrollArea className="max-h-[calc(80vh-200px)] p-1 pr-3">
+        <ScrollArea className="max-h-[calc(80vh-220px)] p-1 pr-3"> {/* Adjusted height */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
             <div>
               <Label htmlFor="invoiceNumber">Invoice #</Label>
@@ -251,17 +240,20 @@ export default function InvoiceFormDialog({
                   <Select
                     onValueChange={(value) => {
                         field.onChange(value);
+                        // If allTasksForClient is not set (meaning we are not in a flow where tasks are pre-determined)
+                        // then update unpaidTasksForSelectedClient based on the new client.
                         if (!allTasksForClient) {
-                            const tasks = FallbackMockTasks.filter(t => t.clientId === value && (!t.billed || (invoice?.tasks || []).some(it => it.taskId === t.id) ) );
-                            setUnpaidTasksForSelectedClient(tasks);
-                            if (!invoice?.id || invoice.clientId !== value) {
+                            const tasksFromStore = dataStore.getTasks();
+                            const clientTasks = tasksFromStore.filter(t => t.clientId === value && (!t.billed || (invoice?.tasks || []).some(it => it.taskId === t.id) ) );
+                            setUnpaidTasksForSelectedClient(clientTasks);
+                            if (!invoice?.id || invoice.clientId !== value) { // If new invoice or client changed
                                 setValue("selectedTasks", []);
                             }
                         }
                     }}
                     defaultValue={field.value}
                     value={field.value}
-                    disabled={!!allTasksForClient || !!invoice?.clientId }
+                    disabled={!!allTasksForClient && !!invoice?.clientId} // Disable if tasks are pre-filled for a specific client (e.g. from TasksPage flow) or editing existing invoice
                     >
                     <SelectTrigger id="clientId" className={errors.clientId ? 'border-destructive' : ''}><SelectValue placeholder="Select a client" /></SelectTrigger>
                     <SelectContent>{clients.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
@@ -297,6 +289,7 @@ export default function InvoiceFormDialog({
                         id={`task-${task.id}`}
                         checked={watchedSelectedTasks?.some(t => t.taskId === task.id)}
                         onCheckedChange={(checked) => handleTaskSelection(task.id, !!checked)}
+                        // Disable checkbox if task is already billed AND not part of the currently selected tasks (for editing scenario)
                         disabled={task.billed && !watchedSelectedTasks?.some(t => t.taskId === task.id)}
                       />
                       <Label htmlFor={`task-${task.id}`} className="flex-1 cursor-pointer">
@@ -305,8 +298,8 @@ export default function InvoiceFormDialog({
                             <span className="text-xs text-muted-foreground">({getServiceName(task.serviceId)})</span>
                         </div>
                         <div className="text-xs text-muted-foreground">
-                          {task.hours} hrs on {format(new Date(task.date), "MMM dd, yyyy")} - Platform: {task.platform}
-                          {task.billed && !watchedSelectedTasks?.some(t => t.taskId === task.id) && <span className="ml-2 text-destructive">(Billed)</span>}
+                          {task.hours} hrs on {format(parseISO(task.date), "MMM dd, yyyy")} - Platform: {task.platform}
+                          {task.billed && !watchedSelectedTasks?.some(t => t.taskId === task.id) && <span className="ml-2 text-destructive">(Already Billed)</span>}
                         </div>
                       </Label>
                     </div>
@@ -315,7 +308,7 @@ export default function InvoiceFormDialog({
               ) : (
                 <div className="text-sm text-muted-foreground p-4 border rounded-md flex items-center gap-2">
                     <AlertTriangle className="h-5 w-5 text-destructive" />
-                    No unbilled tasks found for this client, or all tasks are already selected.
+                     No unbilled tasks found for this client, or all available tasks are already selected.
                 </div>
               )}
               {errors.selectedTasks && <p className="text-xs text-destructive mt-1">{errors.selectedTasks.message}</p>}
@@ -325,7 +318,7 @@ export default function InvoiceFormDialog({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
                 <Label htmlFor="taxRate">Tax Rate (%)</Label>
-                <Input id="taxRate" type="number" step="0.01" {...register("taxRate")} />
+                <Input id="taxRate" type="number" step="0.01" {...register("taxRate")} className={errors.taxRate ? 'border-destructive' : ''} />
                  {errors.taxRate && <p className="text-xs text-destructive mt-1">{errors.taxRate.message}</p>}
             </div>
             <div>
@@ -356,7 +349,7 @@ export default function InvoiceFormDialog({
           </div>
           <div>
             <Label htmlFor="razorpayLink">Razorpay Link (Optional)</Label>
-            <Input id="razorpayLink" {...register("razorpayLink")} placeholder="https://rzp.io/..." />
+            <Input id="razorpayLink" {...register("razorpayLink")} placeholder="https://rzp.io/..." className={errors.razorpayLink ? 'border-destructive' : ''}/>
             {errors.razorpayLink && <p className="text-xs text-destructive mt-1">{errors.razorpayLink.message}</p>}
           </div>
 
@@ -368,7 +361,10 @@ export default function InvoiceFormDialog({
           </ScrollArea>
 
           <DialogFooter className="mt-4">
-            <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
+            <Button type="button" variant="outline" onClick={() => {
+                setDialogOpen(false);
+                if (onOpenChange) onOpenChange(false); // Ensure external handler is called
+            }}>Cancel</Button>
             <Button type="submit" disabled={!watchedClientId || (watchedSelectedTasks || []).length === 0 || Object.keys(errors).length > 0}>
                 {invoice?.id ? "Save Changes" : "Create Invoice"}
             </Button>

@@ -1,49 +1,59 @@
-"use client"; // Required for useState, useEffect, useRouter
-import React, { useState } from 'react'; // Required for useState
+
+"use client";
+import React, { useState, useEffect } from 'react';
 import PageHeader from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { PlusCircle } from "lucide-react";
-import { mockTasks, mockClients, mockServices, mockInvoices as initialMockInvoices } from "@/lib/placeholder-data"; // Added mockInvoices
+import { mockClients, mockServices } from "@/lib/placeholder-data";
 import TaskListTable from "./components/task-list-table";
 import TaskFormDialog from "./components/task-form-dialog";
-import InvoiceFormDialog from "@/app/invoices/components/invoice-form-dialog"; // For opening invoice dialog
-import type { Task as TaskType, Client, Service, Invoice, InvoiceTaskItem } from "@/lib/types"; // Renamed Task to TaskType to avoid conflict
+import InvoiceFormDialog from "@/app/invoices/components/invoice-form-dialog";
+import type { Task as TaskType, Client, Service, Invoice, InvoiceTaskItem } from "@/lib/types";
 import { useToast } from "@/hooks/use-toast";
 import type { InvoiceFormData } from '@/app/invoices/components/invoice-form-dialog';
-
+import { dataStore } from '@/lib/data-store';
 
 export default function TasksPage() {
   const { toast } = useToast();
-  const [tasks, setTasks] = useState<TaskType[]>(mockTasks);
-  const [globalInvoices, setGlobalInvoices] = useState<Invoice[]>(initialMockInvoices); // Manage global invoices
-  const clients = mockClients;
-  const services = mockServices;
+  const [tasks, setTasks] = useState<TaskType[]>(() => dataStore.getTasks() as TaskType[]);
+  const clients = mockClients; // Assuming clients are static for now
+  const services = mockServices; // Assuming services are static for now
 
   const [isInvoiceFormOpen, setIsInvoiceFormOpen] = useState(false);
   const [invoiceDataForForm, setInvoiceDataForForm] = useState<Partial<Omit<Invoice, 'id' | 'totalAmount' | 'taxAmount' | 'finalAmount'> & {tasks: InvoiceTaskItem[]}> | undefined>(undefined);
   const [selectedClientForInvoice, setSelectedClientForInvoice] = useState<Client | undefined>(undefined);
 
+  useEffect(() => {
+    const unsubscribeTasks = dataStore.subscribeToTasks(() => {
+      setTasks([...dataStore.getTasks()]);
+    });
+    return () => {
+      unsubscribeTasks();
+    };
+  }, []);
 
-  const handleSaveTask = (data: any, taskId?: string) => {
+  const handleSaveTask = (data: Omit<TaskType, 'id' | 'clientName' | 'date'> & { date: Date }, taskId?: string) => {
+    const taskPayload = {
+      ...data,
+      date: data.date.toISOString(),
+    };
+
     if (taskId) {
-      console.log("Updating task:", taskId, data);
-      setTasks(prevTasks => prevTasks.map(t => t.id === taskId ? {...t, ...data, date: data.date.toISOString() } : t));
-       toast({ title: "Task Updated", description: "The task has been successfully updated." });
+      dataStore.updateTask(taskId, taskPayload);
+      toast({ title: "Task Updated", description: "The task has been successfully updated." });
     } else {
+      const clientName = clients.find(c=>c.id === data.clientId)?.name || '';
       const newTask: TaskType = {
-        id: `task-${Date.now()}`,
-        ...data,
-        date: data.date.toISOString(),
-        clientName: clients.find(c=>c.id === data.clientId)?.name || '',
+        id: `task-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        ...taskPayload,
+        clientName,
       };
-      console.log("Adding new task:", newTask);
-      setTasks(prevTasks => [newTask, ...prevTasks]);
+      dataStore.addTask(newTask);
       toast({ title: "Task Added", description: "The new task has been successfully logged." });
     }
   };
 
   const handleCreateInvoiceFromTasks = (selectedTasksToInvoice: TaskType[]) => {
-    console.log("TasksPage: handleCreateInvoiceFromTasks called with tasks:", selectedTasksToInvoice);
     if (selectedTasksToInvoice.length === 0) {
       toast({ variant: "destructive", title: "No Tasks Selected", description: "Please select unbilled tasks to create an invoice." });
       return;
@@ -63,14 +73,13 @@ export default function TasksPage() {
     }));
 
     const newInvoiceNumber = `INV-${new Date().getFullYear()}-${String(Math.floor(Math.random()*9000)+1000).padStart(4, '0')}`;
-    console.log("TasksPage: Preparing invoiceDataForForm with invoice number:", newInvoiceNumber, "and tasks:", invoiceTasks);
-
+    
     setInvoiceDataForForm({
       clientId: clientForInvoice.id,
       clientName: clientForInvoice.name,
       tasks: invoiceTasks,
-      issueDate: new Date().toISOString(),
-      dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+      issueDate: new Date().toISOString(), // Will be Date object in form
+      dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(), // Will be Date object in form
       status: 'draft',
       invoiceNumber: newInvoiceNumber,
     });
@@ -78,7 +87,6 @@ export default function TasksPage() {
   };
 
   const handleSaveInvoice = (invoiceFormData: InvoiceFormData) => {
-    console.log("TasksPage: handleSaveInvoice called with form data:", JSON.stringify(invoiceFormData, null, 2));
     try {
       const clientForInvoice = clients.find(c => c.id === invoiceFormData.clientId);
       if (!clientForInvoice) {
@@ -102,16 +110,14 @@ export default function TasksPage() {
           notes: invoiceFormData.notes,
           razorpayLink: invoiceFormData.razorpayLink,
       };
-      console.log("TasksPage: Creating new invoice object:", JSON.stringify(newInvoice, null, 2));
+      
+      dataStore.addInvoice(newInvoice);
 
-      setGlobalInvoices(prev => [newInvoice, ...prev]);
-
-      const billedTaskIds = invoiceFormData.selectedTasks.map((t) => t.taskId);
-      setTasks(prevTasks =>
-          prevTasks.map(task =>
-              billedTaskIds.includes(task.id) ? { ...task, billed: true } : task
-          )
-      );
+      const taskUpdates = invoiceFormData.selectedTasks.map((t) => ({
+          taskId: t.taskId,
+          data: { billed: true }
+      }));
+      dataStore.updateMultipleTasks(taskUpdates);
 
       toast({ title: "Invoice Created", description: `New invoice ${newInvoice.invoiceNumber} created and tasks marked as billed.` });
       setIsInvoiceFormOpen(false);
@@ -122,7 +128,6 @@ export default function TasksPage() {
       toast({ variant: "destructive", title: "Error Saving Invoice", description: `An unexpected error occurred: ${error instanceof Error ? error.message : String(error)}` });
     }
   };
-
 
   return (
     <>
@@ -147,10 +152,10 @@ export default function TasksPage() {
       />
        {isInvoiceFormOpen && selectedClientForInvoice && invoiceDataForForm && (
         <InvoiceFormDialog
-          invoice={invoiceDataForForm as Partial<Invoice>}
+          invoice={invoiceDataForForm as Partial<Invoice>} // Cast needed because form expects Date objects for date fields initially
           clients={clients}
-          allTasksForClient={tasks.filter(t => t.clientId === selectedClientForInvoice.id && (!t.billed || (invoiceDataForForm.tasks || []).some(it => it.taskId === t.id)))}
-          trigger={<React.Fragment />}
+          allTasksForClient={dataStore.getTasks().filter(t => t.clientId === selectedClientForInvoice.id && (!t.billed || (invoiceDataForForm.tasks || []).some(it => it.taskId === t.id)))}
+          trigger={<div />} // Empty div as trigger is not used when forceOpen is true
           onSave={handleSaveInvoice}
           forceOpen={isInvoiceFormOpen}
           onOpenChange={(open) => {

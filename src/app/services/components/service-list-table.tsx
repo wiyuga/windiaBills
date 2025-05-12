@@ -8,10 +8,10 @@ import ServiceFormDialog from "./service-form-dialog";
 interface ServiceListTableProps {
   services: Service[];
   onEdit: (serviceData: { name: string }, serviceId?: string) => void;
-  // onDelete: (serviceId: string) => void; // Placeholder for delete
+  onDelete: (service: Service) => void; 
 }
 
-export default function ServiceListTable({ services, onEdit }: ServiceListTableProps) {
+export default function ServiceListTable({ services, onEdit, onDelete }: ServiceListTableProps) {
   return (
     <div className="rounded-lg border shadow-sm bg-card">
       <Table>
@@ -36,7 +36,12 @@ export default function ServiceListTable({ services, onEdit }: ServiceListTableP
                   }
                   onSave={(data) => onEdit(data, service.id)}
                  />
-                <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive">
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  className="text-destructive hover:text-destructive"
+                  onClick={() => onDelete(service)}
+                >
                   <Trash2 className="h-4 w-4" />
                   <span className="sr-only">Delete</span>
                 </Button>

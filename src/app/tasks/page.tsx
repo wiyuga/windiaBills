@@ -1,25 +1,27 @@
+tsx
 "use client"; // Required for useState, useEffect, useRouter
 import React, { useState } from 'react'; // Required for useState
 import PageHeader from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { PlusCircle } from "lucide-react";
-import { mockTasks, mockClients, mockServices } from "@/lib/placeholder-data";
+import { mockTasks, mockClients, mockServices, mockInvoices as initialMockInvoices } from "@/lib/placeholder-data"; // Added mockInvoices
 import TaskListTable from "./components/task-list-table";
 import TaskFormDialog from "./components/task-form-dialog";
 import InvoiceFormDialog from "@/app/invoices/components/invoice-form-dialog"; // For opening invoice dialog
-import type { Task as TaskType, Client, Service, Invoice } from "@/lib/types"; // Renamed Task to TaskType to avoid conflict
+import type { Task as TaskType, Client, Service, Invoice, InvoiceTaskItem } from "@/lib/types"; // Renamed Task to TaskType to avoid conflict
 import { useToast } from "@/hooks/use-toast";
+import type { InvoiceFormData } from '@/app/invoices/components/invoice-form-dialog';
 
 
 export default function TasksPage() {
   const { toast } = useToast();
-  // In a real app, fetch tasks from an API
-  const [tasks, setTasks] = useState<TaskType[]>(mockTasks); // Make tasks stateful for updates
+  const [tasks, setTasks] = useState<TaskType[]>(mockTasks); 
+  const [globalInvoices, setGlobalInvoices] = useState<Invoice[]>(initialMockInvoices); // Manage global invoices
   const clients = mockClients; 
   const services = mockServices;
 
   const [isInvoiceFormOpen, setIsInvoiceFormOpen] = useState(false);
-  const [invoiceDataForForm, setInvoiceDataForForm] = useState<Partial<Invoice> | undefined>(undefined);
+  const [invoiceDataForForm, setInvoiceDataForForm] = useState<Partial<Omit<Invoice, 'id' | 'totalAmount' | 'taxAmount' | 'finalAmount'> & {tasks: InvoiceTaskItem[]}> | undefined>(undefined);
   const [selectedClientForInvoice, setSelectedClientForInvoice] = useState<Client | undefined>(undefined);
 
 
@@ -29,7 +31,7 @@ export default function TasksPage() {
       setTasks(prevTasks => prevTasks.map(t => t.id === taskId ? {...t, ...data, date: data.date.toISOString() } : t));
        toast({ title: "Task Updated", description: "The task has been successfully updated." });
     } else {
-      const newTask = { 
+      const newTask: TaskType = { 
         id: `task-${Date.now()}`, 
         ...data, 
         date: data.date.toISOString(),
@@ -54,49 +56,57 @@ export default function TasksPage() {
 
     setSelectedClientForInvoice(clientForInvoice);
     
-    const invoiceTasks = selectedTasksToInvoice.map(task => ({
+    const invoiceTasks: InvoiceTaskItem[] = selectedTasksToInvoice.map(task => ({
         taskId: task.id,
         description: task.description,
         hours: task.hours,
     }));
 
-    const subTotal = invoiceTasks.reduce((sum, taskItem) => {
-        return sum + (taskItem.hours * (clientForInvoice.hourlyRate || 0));
-    }, 0);
-    
-    // Assuming a default tax rate, e.g., 10%
-    const defaultTaxRate = 10; 
-    const taxAmount = subTotal * (defaultTaxRate / 100);
-    const totalAmountWithTax = subTotal + taxAmount;
-
-
     setInvoiceDataForForm({
       clientId: clientForInvoice.id,
       clientName: clientForInvoice.name,
-      tasks: invoiceTasks,
+      tasks: invoiceTasks, // This maps to `selectedTasks` in the form dialog's default values
       issueDate: new Date().toISOString(),
-      dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(), // Due in 14 days
+      dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(), 
       status: 'draft',
-      // totalAmount: subTotal, // This will be calculated in InvoiceFormDialog
-      // taxAmount: taxAmount, // This will be calculated based on taxRate in InvoiceFormDialog
-      // finalAmount: totalAmountWithTax, // This will be calculated
+      invoiceNumber: `INV-${new Date().getFullYear()}-${String(Math.floor(Math.random()*9000)+1000).padStart(4, '0')}`,
     });
     setIsInvoiceFormOpen(true);
   };
 
-  const handleSaveInvoice = (invoiceFormData: any) => {
+  const handleSaveInvoice = (invoiceFormData: InvoiceFormData) => {
     console.log("Saving invoice from Tasks page:", invoiceFormData);
+    
+    const newInvoice: Invoice = {
+        id: `invoice-${Date.now()}-${Math.random().toString(36).substring(2,7)}`,
+        invoiceNumber: invoiceFormData.invoiceNumber,
+        clientId: invoiceFormData.clientId,
+        clientName: clients.find(c => c.id === invoiceFormData.clientId)?.name || '',
+        tasks: invoiceFormData.selectedTasks, // Use selectedTasks from form data
+        totalAmount: invoiceFormData.totalAmount,
+        taxAmount: invoiceFormData.taxAmount,
+        finalAmount: invoiceFormData.finalAmount,
+        status: invoiceFormData.status,
+        issueDate: invoiceFormData.issueDate.toISOString(),
+        dueDate: invoiceFormData.dueDate.toISOString(),
+        notes: invoiceFormData.notes,
+        razorpayLink: invoiceFormData.razorpayLink,
+    };
+
+    setGlobalInvoices(prev => [newInvoice, ...prev]); // Add to a global/mock invoice list
+
     // Mark tasks as billed
-    const billedTaskIds = invoiceFormData.tasks.map((t: any) => t.taskId);
+    const billedTaskIds = invoiceFormData.selectedTasks.map((t) => t.taskId);
     setTasks(prevTasks => 
         prevTasks.map(task => 
             billedTaskIds.includes(task.id) ? { ...task, billed: true } : task
         )
     );
-    // Add to mockInvoices (or call API)
-    // mockInvoices.push({ id: `invoice-${Date.now()}`, ...invoiceFormData /* transform as needed */ });
-    toast({ title: "Invoice Created", description: "New invoice created and tasks marked as billed." });
+    
+    toast({ title: "Invoice Created", description: `New invoice ${newInvoice.invoiceNumber} created and tasks marked as billed.` });
     setIsInvoiceFormOpen(false);
+    setInvoiceDataForForm(undefined);
+    setSelectedClientForInvoice(undefined);
   };
 
 
@@ -121,17 +131,20 @@ export default function TasksPage() {
         onSaveTask={handleSaveTask}
         onCreateInvoice={handleCreateInvoiceFromTasks}
       />
-       {isInvoiceFormOpen && selectedClientForInvoice && (
+       {isInvoiceFormOpen && selectedClientForInvoice && invoiceDataForForm && (
         <InvoiceFormDialog
-          invoice={invoiceDataForForm as any} // Cast as any if structure differs slightly, ensure it's compatible
+          // Pass the pre-filled invoice data. `invoiceDataForForm.tasks` will be used for `selectedTasks` in the dialog.
+          invoice={invoiceDataForForm as Partial<Invoice>} 
           clients={clients}
-          allTasksForClient={tasks.filter(t => t.clientId === selectedClientForInvoice.id && !t.billed)} // Pass unbilled tasks for this client
-          trigger={<></>} // Dialog is controlled by isInvoiceFormOpen, no visible trigger needed here
+          // Pass all unbilled tasks for the selected client so the dialog can display them if needed,
+          // though primary task selection happens here. The dialog will use `invoiceDataForForm.tasks` to pre-check.
+          allTasksForClient={tasks.filter(t => t.clientId === selectedClientForInvoice.id && (!t.billed || (invoiceDataForForm.tasks || []).some(it => it.taskId === t.id)))}
+          trigger={<></>} 
           onSave={handleSaveInvoice}
-          forceOpen={isInvoiceFormOpen} // Prop to control dialog visibility externally
+          forceOpen={isInvoiceFormOpen} 
           onOpenChange={(open) => {
+            setIsInvoiceFormOpen(open); // This will set it to false when dialog closes
             if (!open) {
-              setIsInvoiceFormOpen(false);
               setInvoiceDataForForm(undefined);
               setSelectedClientForInvoice(undefined);
             }

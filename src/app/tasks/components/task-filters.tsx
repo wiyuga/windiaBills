@@ -1,3 +1,4 @@
+tsx
 "use client";
 
 import React from 'react';
@@ -59,7 +60,8 @@ export default function TaskFilters({
         </div>
         <div>
           <Label htmlFor="statusFilter" className="text-sm font-medium">Status</Label>
-          <Select value={selectedStatus} onStatusChange={onStatusChange}>
+          {/* Corrected prop from onStatusChange to onValueChange */}
+          <Select value={selectedStatus} onValueChange={onStatusChange}>
             <SelectTrigger id="statusFilter">
               <SelectValue placeholder="All Statuses" />
             </SelectTrigger>

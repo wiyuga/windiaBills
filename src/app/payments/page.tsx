@@ -1,11 +1,12 @@
+tsx
 "use client"
 import React, { useState, useMemo, useEffect } from 'react';
 import PageHeader from "@/components/shared/page-header";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input"; // For date range potentially, or use Calendar
-import { Label } from "@/components/ui/label"; // Import Label component
+// import { Input } from "@/components/ui/input"; // Not used directly, Calendar is used
+import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
@@ -16,21 +17,19 @@ import { format, startOfMonth, endOfMonth, isWithinInterval, parseISO } from 'da
 import { cn } from '@/lib/utils';
 
 export default function PaymentsPage() {
-  const allPaidInvoices = mockInvoices.filter(inv => inv.status === 'paid');
-  const clients = mockClients;
-  const services = mockServices;
-  const tasks = mockTasks; // For service/project lookup
+  const allPaidInvoicesInitial = useMemo(() => mockInvoices.filter(inv => inv.status === 'paid'), []);
+  // Removed clients, services, tasks direct usage as they are looked up by ID. They are stable imports.
 
-  const [filteredInvoices, setFilteredInvoices] = useState<Invoice[]>(allPaidInvoices);
+  const [filteredInvoices, setFilteredInvoices] = useState<Invoice[]>(allPaidInvoicesInitial);
   const [selectedClient, setSelectedClient] = useState<string>('all');
   const [dateRange, setDateRange] = useState<{ from?: Date; to?: Date }>({});
 
-  const getClientDetails = (clientId: string) => clients.find(c => c.id === clientId);
-  const getTaskDetails = (taskId: string) => tasks.find(t => t.id === taskId);
-  const getServiceDetails = (serviceId: string) => services.find(s => s.id === serviceId);
+  const getClientDetails = (clientId: string) => mockClients.find(c => c.id === clientId);
+  const getTaskDetails = (taskId: string) => mockTasks.find(t => t.id === taskId);
+  const getServiceDetails = (serviceId: string) => mockServices.find(s => s.id === serviceId);
 
   useEffect(() => {
-    let currentInvoices = allPaidInvoices;
+    let currentInvoices = [...allPaidInvoicesInitial]; // Start with a fresh copy of the memoized initial list
 
     if (selectedClient !== 'all') {
       currentInvoices = currentInvoices.filter(inv => inv.clientId === selectedClient);
@@ -46,23 +45,22 @@ export default function PaymentsPage() {
        currentInvoices = currentInvoices.filter(inv => parseISO(inv.issueDate) <= dateRange.to!);
     }
 
-
     setFilteredInvoices(currentInvoices);
-  }, [selectedClient, dateRange, allPaidInvoices]);
+  }, [selectedClient, dateRange, allPaidInvoicesInitial]);
 
   const totalRevenueFiltered = useMemo(() => {
     return filteredInvoices.reduce((sum, inv) => sum + (inv.finalAmount || inv.totalAmount), 0);
   }, [filteredInvoices]);
 
-  const recentMonthRevenue = useMemo(() => { // Renamed from currentMonthRevenue for clarity
+  const recentMonthRevenue = useMemo(() => { 
     const today = new Date();
-    const startOfRecentMonth = startOfMonth(today); // Can be adjusted to last 30 days, etc.
+    const startOfRecentMonth = startOfMonth(today);
     const endOfRecentMonth = endOfMonth(today);
     
-    return allPaidInvoices
+    return allPaidInvoicesInitial // Use the memoized initial list for this calculation
       .filter(inv => isWithinInterval(parseISO(inv.issueDate), { start: startOfRecentMonth, end: endOfRecentMonth }))
       .reduce((sum, inv) => sum + (inv.finalAmount || inv.totalAmount), 0);
-  }, [allPaidInvoices]);
+  }, [allPaidInvoicesInitial]);
 
   const displayRevenue = (selectedClient !== 'all' || dateRange.from || dateRange.to) ? totalRevenueFiltered : recentMonthRevenue;
   const displayRevenueLabel = (selectedClient !== 'all' || dateRange.from || dateRange.to) ? "Filtered Revenue" : "Recent Month Revenue";
@@ -84,7 +82,7 @@ export default function PaymentsPage() {
                 <div className="text-3xl font-bold">${displayRevenue.toFixed(2)}</div>
                 <p className="text-xs text-muted-foreground">
                     { (selectedClient === 'all' && !dateRange.from && !dateRange.to) 
-                        ? "Total revenue for the current month." // This label could be more dynamic if needed
+                        ? "Total revenue for the current month."
                         : "Total revenue based on applied filters."
                     }
                 </p>
@@ -103,7 +101,7 @@ export default function PaymentsPage() {
                         <SelectTrigger id="clientFilterPayments"><SelectValue placeholder="All Clients" /></SelectTrigger>
                         <SelectContent>
                         <SelectItem value="all">All Clients</SelectItem>
-                        {clients.map(client => (
+                        {mockClients.map(client => (
                             <SelectItem key={client.id} value={client.id}>{client.name}</SelectItem>
                         ))}
                         </SelectContent>
@@ -181,7 +179,6 @@ export default function PaymentsPage() {
                     {filteredInvoices.map((invoice: Invoice) => {
                       const client = getClientDetails(invoice.clientId);
                       const currencySymbol = client?.currency === 'INR' ? '₹' : '$';
-                      // For simplicity, taking first task's service. In reality, an invoice can cover multiple services.
                       const firstTaskDetails = invoice.tasks[0] ? getTaskDetails(invoice.tasks[0].taskId) : undefined;
                       const serviceName = firstTaskDetails ? getServiceDetails(firstTaskDetails.serviceId)?.name : 'N/A';
                       
@@ -190,11 +187,11 @@ export default function PaymentsPage() {
                         <TableCell className="font-medium">{invoice.invoiceNumber}</TableCell>
                         <TableCell>{invoice.clientName || client?.name || 'N/A'}</TableCell>
                         <TableCell>{client?.projectName || 'N/A'}</TableCell>
-                        <TableCell>{serviceName}</TableCell> {/* Simplified: shows first task's service */}
+                        <TableCell>{serviceName}</TableCell>
                         <TableCell>{format(parseISO(invoice.issueDate), 'MMM dd, yyyy')} (Assumed paid)</TableCell>
                         <TableCell className="text-right">{currencySymbol}{(invoice.finalAmount || invoice.totalAmount).toFixed(2)}</TableCell>
                       </TableRow>
-                    )})}
+                    );})}
                   </TableBody>
                 </Table>
               </div>

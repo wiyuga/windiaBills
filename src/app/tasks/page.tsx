@@ -1,3 +1,4 @@
+
 "use client"; // Required for useState, useEffect, useRouter
 import React, { useState, useEffect } from 'react';
 import PageHeader from "@/components/shared/page-header";
@@ -15,8 +16,8 @@ import { dataStore } from '@/lib/data-store';
 export default function TasksPage() {
   const { toast } = useToast();
   const [tasks, setTasks] = useState<TaskType[]>(() => dataStore.getTasks() as TaskType[]);
-  const clients = mockClients; // Assuming clients are static for now
-  const services = mockServices; // Assuming services are static for now
+  const clients = mockClients; 
+  const services = mockServices; 
 
   const [isInvoiceFormOpen, setIsInvoiceFormOpen] = useState(false);
   const [invoiceDataForForm, setInvoiceDataForForm] = useState<Partial<Omit<Invoice, 'id' | 'totalAmount' | 'taxAmount' | 'finalAmount'>> & {tasks: InvoiceTaskItem[]} | undefined>(undefined);
@@ -81,7 +82,7 @@ export default function TasksPage() {
       dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(), 
       status: 'draft',
       invoiceNumber: newInvoiceNumber,
-      taxRate: clientForInvoice.currency === 'INR' ? 18 : 10, // Example: Different tax rates
+      taxRate: clientForInvoice.currency === 'INR' ? 18 : 10, 
     });
     setIsInvoiceFormOpen(true);
   };
@@ -117,7 +118,7 @@ export default function TasksPage() {
           taskId: t.taskId,
           data: { billed: true } as Partial<TaskType> 
       }));
-      dataStore.updateMultipleTasks(taskUpdates);
+      dataStore.updateMultipleTasks(taskUpdates); // This marks tasks as billed
 
       toast({ title: "Invoice Created", description: `New invoice ${newInvoice.invoiceNumber} created and tasks marked as billed.` });
       setIsInvoiceFormOpen(false);
@@ -129,16 +130,19 @@ export default function TasksPage() {
     }
   };
   
+  // Calculate tasksForInvoiceDialog based on the component's current 'tasks' state.
+  // This ensures that the InvoiceFormDialog receives the most consistent data relative to TaskListTable.
   let tasksForInvoiceDialog: TaskType[] = [];
   if (isInvoiceFormOpen && selectedClientForInvoice && invoiceDataForForm?.tasks) {
-    const currentTasksState = dataStore.getTasks();
-    // Ensure that only tasks that are unbilled OR are already part of the invoice being formed are shown
+    // Use the 'tasks' state from TasksPage, which is subscribed to dataStore updates.
+    const currentTasksState = tasks; 
     tasksForInvoiceDialog = currentTasksState.filter(t =>
         t.clientId === selectedClientForInvoice.id &&
-        (!t.billed || invoiceDataForForm.tasks.some(it => it.taskId === t.id))
+        // Task should be shown if it's unbilled OR it's one of the tasks initially selected for this invoice
+        // (the latter part of OR is mainly for editing existing invoices, but good for robustness here too)
+        (!t.billed || (invoiceDataForForm.tasks || []).some(it => it.taskId === t.id))
     );
   }
-
 
   return (
     <>
@@ -155,7 +159,7 @@ export default function TasksPage() {
         }
       />
       <TaskListTable
-        tasks={tasks}
+        tasks={tasks} // Pass the local, subscribed 'tasks' state
         clients={clients}
         services={services}
         onSaveTask={handleSaveTask}
@@ -165,6 +169,7 @@ export default function TasksPage() {
         <InvoiceFormDialog
           invoice={invoiceDataForForm as Partial<Invoice>} 
           clients={clients}
+          // Pass the carefully filtered list of tasks for the dialog
           allTasksForClient={tasksForInvoiceDialog}
           trigger={<div />} 
           onSave={handleSaveInvoice}

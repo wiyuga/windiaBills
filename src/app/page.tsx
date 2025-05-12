@@ -1,15 +1,28 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import PageHeader from "@/components/shared/page-header";
-import { DollarSign, Users, ListChecks, FileText } from "lucide-react";
+import { IndianRupee, Users, ListChecks, FileText } from "lucide-react"; // Changed DollarSign to IndianRupee
 import { mockClients, mockTasks, mockInvoices } from "@/lib/placeholder-data";
 
 export default function DashboardPage() {
   const totalClients = mockClients.length;
   const openTasks = mockTasks.filter(task => !task.billed).length;
   const unpaidInvoices = mockInvoices.filter(invoice => invoice.status === 'sent' || invoice.status === 'overdue').length;
-  const totalRevenue = mockInvoices
+  
+  // Calculate total revenue based on currency, then convert to INR for display if necessary.
+  // For simplicity, this example assumes all invoices are either USD or INR and converts USD to INR.
+  // In a real app, you would have exchange rates and potentially store amounts in a base currency.
+  const INR_USD_EXCHANGE_RATE = 83; // Example fixed rate
+
+  const totalRevenueInINR = mockInvoices
     .filter(invoice => invoice.status === 'paid')
-    .reduce((sum, inv) => sum + (inv.finalAmount || inv.totalAmount), 0);
+    .reduce((sum, inv) => {
+      const client = mockClients.find(c => c.id === inv.clientId);
+      const amount = inv.finalAmount || inv.totalAmount;
+      if (client?.currency === 'USD') {
+        return sum + (amount * INR_USD_EXCHANGE_RATE);
+      }
+      return sum + amount;
+    }, 0);
 
   return (
     <>
@@ -18,11 +31,11 @@ export default function DashboardPage() {
         <Card className="shadow-md hover:shadow-lg transition-shadow duration-300">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Revenue (Paid)</CardTitle>
-            <DollarSign className="h-5 w-5 text-primary" />
+            <IndianRupee className="h-5 w-5 text-primary" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">${totalRevenue.toFixed(2)}</div>
-            <p className="text-xs text-muted-foreground">From all paid invoices</p>
+            <div className="text-2xl font-bold">₹{totalRevenueInINR.toFixed(2)}</div>
+            <p className="text-xs text-muted-foreground">From all paid invoices (in INR)</p>
           </CardContent>
         </Card>
         <Card className="shadow-md hover:shadow-lg transition-shadow duration-300">

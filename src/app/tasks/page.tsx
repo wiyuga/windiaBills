@@ -1,5 +1,5 @@
-
-"use client";
+tsx
+"use client"; // Required for useState, useEffect, useRouter
 import React, { useState, useEffect } from 'react';
 import PageHeader from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
@@ -77,11 +77,12 @@ export default function TasksPage() {
     setInvoiceDataForForm({
       clientId: clientForInvoice.id,
       clientName: clientForInvoice.name,
-      tasks: invoiceTasks,
+      tasks: invoiceTasks, // These are the pre-selected tasks
       issueDate: new Date().toISOString(), // Will be Date object in form
       dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(), // Will be Date object in form
       status: 'draft',
       invoiceNumber: newInvoiceNumber,
+      // taxRate will default in the form
     });
     setIsInvoiceFormOpen(true);
   };
@@ -99,8 +100,8 @@ export default function TasksPage() {
           id: `invoice-${Date.now()}-${Math.random().toString(36).substring(2,7)}`,
           invoiceNumber: invoiceFormData.invoiceNumber,
           clientId: invoiceFormData.clientId,
-          clientName: clientForInvoice.name,
-          tasks: invoiceFormData.selectedTasks,
+          clientName: clientForInvoice.name, // Use fetched client name
+          tasks: invoiceFormData.selectedTasks, // These are InvoiceTaskItem[]
           totalAmount: invoiceFormData.totalAmount,
           taxAmount: invoiceFormData.taxAmount,
           finalAmount: invoiceFormData.finalAmount,
@@ -113,9 +114,10 @@ export default function TasksPage() {
       
       dataStore.addInvoice(newInvoice);
 
-      const taskUpdates = invoiceFormData.selectedTasks.map((t) => ({
+      // Mark tasks as billed in the dataStore
+      const taskUpdates = invoiceFormData.selectedTasks.map((t) => ({ // t is InvoiceTaskItem
           taskId: t.taskId,
-          data: { billed: true }
+          data: { billed: true } as Partial<TaskType>
       }));
       dataStore.updateMultipleTasks(taskUpdates);
 
@@ -152,10 +154,17 @@ export default function TasksPage() {
       />
        {isInvoiceFormOpen && selectedClientForInvoice && invoiceDataForForm && (
         <InvoiceFormDialog
-          invoice={invoiceDataForForm as Partial<Invoice>} // Cast needed because form expects Date objects for date fields initially
+          invoice={invoiceDataForForm as Partial<Invoice>} 
           clients={clients}
-          allTasksForClient={dataStore.getTasks().filter(t => t.clientId === selectedClientForInvoice.id && (!t.billed || (invoiceDataForForm.tasks || []).some(it => it.taskId === t.id)))}
-          trigger={<div />} // Empty div as trigger is not used when forceOpen is true
+          // Pass all unbilled tasks for the selected client.
+          // The `invoiceDataForForm.tasks` (passed via `invoice` prop) will determine pre-selection in the dialog.
+          allTasksForClient={selectedClientForInvoice ? 
+            dataStore.getTasks().filter(t => 
+                t.clientId === selectedClientForInvoice.id && !t.billed
+            ) 
+            : []
+          }
+          trigger={<div />} // Empty div, not used when forceOpen is true
           onSave={handleSaveInvoice}
           forceOpen={isInvoiceFormOpen}
           onOpenChange={(open) => {

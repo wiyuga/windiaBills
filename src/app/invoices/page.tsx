@@ -1,5 +1,6 @@
 
 "use client";
+import ProtectedRoute from "@/components/ProtectedRoute";
 import React, { useState, useEffect } from 'react';
 import PageHeader from "@/components/shared/page-header";
 import { mockClients, mockServices } from "@/lib/placeholder-data"; // Tasks will come from dataStore
@@ -65,6 +66,7 @@ export default function InvoicesPage() {
 
 
   return (
+    <ProtectedRoute allowedRoles={["admin", "client"]}>
     <>
       <PageHeader 
         title="Invoices" 
@@ -93,5 +95,6 @@ export default function InvoicesPage() {
         />
       )}
     </>
+    </ProtectedRoute>
   );
 }

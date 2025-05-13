@@ -1,5 +1,5 @@
 "use client";
-
+import ProtectedRoute from "@/components/ProtectedRoute";
 import React, { useState } from 'react';
 import PageHeader from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
@@ -35,6 +35,7 @@ export default function ClientsPage() {
   };
 
   return (
+    <ProtectedRoute allowedRoles={["admin", "client"]}>
     <>
       <PageHeader 
         title="Clients" 
@@ -49,5 +50,7 @@ export default function ClientsPage() {
       />
       <ClientListTable clients={currentClients} services={currentServices} onSaveClient={handleSaveClient} />
     </>
+    </ProtectedRoute>
+
   );
 }

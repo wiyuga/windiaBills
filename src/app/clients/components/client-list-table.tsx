@@ -1,48 +1,30 @@
 "use client";
-// tsx - Keep this comment if it's for a specific tool or convention, otherwise it can be removed.
 import type { Client, Service } from "@/lib/types";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { FilePenLine, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import ClientFormDialog from "./client-form-dialog";
-import type { ClientFormData } from "./client-form-dialog"; // Import ClientFormData
+import type { ClientFormData } from "./client-form-dialog"; 
 import { format } from 'date-fns';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
 import React from "react";
+// AlertDialog related imports are removed as the dialog is now handled by the parent.
 
 
 interface ClientListTableProps {
   clients: Client[];
   services: Service[]; 
   onSaveClient: (data: ClientFormData, clientId?: string) => void;
-  onDeleteClient: (clientId: string) => void;
+  onDeleteClient: (client: Client) => void; // Changed to expect the full client object
 }
 
 export default function ClientListTable({ clients, services, onSaveClient, onDeleteClient }: ClientListTableProps) {
-  const [clientToDelete, setClientToDelete] = React.useState<Client | null>(null);
+  // Removed local clientToDelete state and handleDeleteConfirmation function.
+  // The parent component (ClientsPage) will now manage the AlertDialog.
   
   const getServiceName = (serviceId: string) => services.find(s => s.id === serviceId)?.name || 'N/A';
 
-  const handleDeleteConfirmation = () => {
-    if (clientToDelete) {
-      onDeleteClient(clientToDelete.id);
-      setClientToDelete(null);
-    }
-  };
-
   return (
-    <>
     <div className="rounded-lg border shadow-sm bg-card">
       <Table>
         <TableHeader>
@@ -91,12 +73,16 @@ export default function ClientListTable({ clients, services, onSaveClient, onDel
                   }
                   onSave={onSaveClient}
                  />
-                <AlertDialogTrigger asChild>
-                  <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => setClientToDelete(client)}>
-                    <Trash2 className="h-4 w-4" />
-                    <span className="sr-only">Delete</span>
-                  </Button>
-                </AlertDialogTrigger>
+                {/* Changed from AlertDialogTrigger to a regular Button that calls the onDeleteClient prop */}
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  className="text-destructive hover:text-destructive" 
+                  onClick={() => onDeleteClient(client)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  <span className="sr-only">Delete</span>
+                </Button>
               </TableCell>
             </TableRow>
           ))}
@@ -110,24 +96,6 @@ export default function ClientListTable({ clients, services, onSaveClient, onDel
         </TableBody>
       </Table>
     </div>
-    {clientToDelete && (
-        <AlertDialog open={!!clientToDelete} onOpenChange={(open) => !open && setClientToDelete(null)}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Are you sure you want to delete "{clientToDelete.name}"?</AlertDialogTitle>
-              <AlertDialogDescription>
-                This action cannot be undone. This will permanently delete the client and all associated data.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel onClick={() => setClientToDelete(null)}>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={handleDeleteConfirmation} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-                Delete
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      )}
-    </>
+    // Removed the AlertDialog JSX that was previously here. It's now managed by ClientsPage.
   );
 }

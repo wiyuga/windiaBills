@@ -1,3 +1,4 @@
+tsx
 "use client";
 import type { Client, Service } from "@/lib/types";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -5,12 +6,13 @@ import { Button } from "@/components/ui/button";
 import { FilePenLine, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import ClientFormDialog from "./client-form-dialog";
+import type { ClientFormData } from "./client-form-dialog"; // Import ClientFormData
 import { format } from 'date-fns';
 
 interface ClientListTableProps {
   clients: Client[];
-  services: Service[]; // To pass to dialog for service selection
-  onSaveClient: (data: any, clientId?: string) => void; // Placeholder for save
+  services: Service[]; 
+  onSaveClient: (data: ClientFormData, clientId?: string) => void; // Use ClientFormData
 }
 
 export default function ClientListTable({ clients, services, onSaveClient }: ClientListTableProps) {
@@ -44,16 +46,16 @@ export default function ClientListTable({ clients, services, onSaveClient }: Cli
               <TableCell>{client.email}</TableCell>
               <TableCell>{client.mobile || '-'}</TableCell>
               <TableCell>{client.country}</TableCell>
-              <TableCell>{client.hourlyRate.toFixed(2)}</TableCell>
+              <TableCell>{client.hourlyRate?.toFixed(2) || '0.00'}</TableCell>
               <TableCell>{client.currency}</TableCell>
               <TableCell>{client.projectName}</TableCell>
-              <TableCell>{client.serviceIds.map(id => getServiceName(id)).join(', ')}</TableCell>
+              <TableCell>{client.serviceIds?.map(id => getServiceName(id)).join(', ') || 'N/A'}</TableCell>
               <TableCell>
                 <Badge variant={client.status === 'active' ? 'default' : 'secondary'} className="capitalize">
                   {client.status}
                 </Badge>
               </TableCell>
-              <TableCell>{format(new Date(client.createdAt), 'MMM dd, yyyy')}</TableCell>
+              <TableCell>{client.createdAt ? format(new Date(client.createdAt), 'MMM dd, yyyy') : '-'}</TableCell>
               <TableCell className="text-right">
                 <ClientFormDialog
                   client={client}
@@ -85,3 +87,4 @@ export default function ClientListTable({ clients, services, onSaveClient }: Cli
     </div>
   );
 }
+

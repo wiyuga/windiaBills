@@ -1,3 +1,4 @@
+tsx
 "use client";
 
 import React, { useState, useEffect } from 'react';
@@ -35,11 +36,14 @@ export default function ServicesPage() {
 
   // Subscribe to services collection
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, 'services'), snapshot => {
-      setServices(snapshot.docs.map(d => ({ id: d.id, ...d.data() })) as Service[]);
+    const unsub = onSnapshot(collection(db, 'services'), (snapshot) => {
+      setServices(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Service)));
+    }, (error) => {
+        console.error("Error fetching services with onSnapshot:", error);
+        toast({ variant: "destructive", title: "Error", description: "Could not fetch services." });
     });
     return () => unsub();
-  }, []);
+  }, [toast]);
 
   // Save or update a service
   const handleSaveService = async (data: { name: string }, serviceId?: string) => {
@@ -51,6 +55,7 @@ export default function ServicesPage() {
         await addDoc(collection(db, 'services'), data);
         toast({ title: 'Service Added', description: `Service "${data.name}" has been added.` });
       }
+      // Local state updated by onSnapshot
     } catch (error) {
       console.error('Error saving service:', error);
       toast({ variant: 'destructive', title: 'Error', description: 'Could not save service.' });
@@ -63,6 +68,7 @@ export default function ServicesPage() {
       try {
         await deleteDoc(doc(db, 'services', serviceToDelete.id));
         toast({ variant: 'destructive', title: 'Service Deleted', description: `Service "${serviceToDelete.name}" has been deleted.` });
+         // Local state updated by onSnapshot
       } catch (error) {
         console.error('Error deleting service:', error);
         toast({ variant: 'destructive', title: 'Error', description: 'Could not delete service.' });

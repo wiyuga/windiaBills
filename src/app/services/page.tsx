@@ -1,10 +1,9 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import PageHeader from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
-import { PlusCircle, Trash2 } from "lucide-react";
-import { mockServices as initialMockServices } from "@/lib/placeholder-data";
+import { PlusCircle } from "lucide-react";
 import ServiceListTable from "./components/service-list-table";
 import ServiceFormDialog from "./components/service-form-dialog";
 import type { Service } from '@/lib/types';
@@ -19,34 +18,57 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { db } from '@/lib/firebaseConfig';
+import {
+  collection,
+  onSnapshot,
+  addDoc,
+  updateDoc,
+  doc,
+  deleteDoc,
+} from 'firebase/firestore';
 
 export default function ServicesPage() {
-  const [services, setServices] = useState<Service[]>(initialMockServices);
   const { toast } = useToast();
+  const [services, setServices] = useState<Service[]>([]);
   const [serviceToDelete, setServiceToDelete] = useState<Service | null>(null);
 
-  const handleSaveService = (data: { name: string }, serviceId?: string) => {
-    if (serviceId) {
-      setServices(prevServices =>
-        prevServices.map(s => (s.id === serviceId ? { ...s, ...data } : s))
-      );
-      toast({ title: "Service Updated", description: `Service "${data.name}" has been updated.` });
-    } else {
-      const newService: Service = { id: `service-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`, ...data };
-      setServices(prevServices => [newService, ...prevServices]);
-      toast({ title: "Service Added", description: `Service "${data.name}" has been added.` });
+  // Subscribe to services collection
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'services'), snapshot => {
+      setServices(snapshot.docs.map(d => ({ id: d.id, ...d.data() })) as Service[]);
+    });
+    return () => unsub();
+  }, []);
+
+  // Save or update a service
+  const handleSaveService = async (data: { name: string }, serviceId?: string) => {
+    try {
+      if (serviceId) {
+        await updateDoc(doc(db, 'services', serviceId), data);
+        toast({ title: 'Service Updated', description: `Service "${data.name}" has been updated.` });
+      } else {
+        await addDoc(collection(db, 'services'), data);
+        toast({ title: 'Service Added', description: `Service "${data.name}" has been added.` });
+      }
+    } catch (error) {
+      console.error('Error saving service:', error);
+      toast({ variant: 'destructive', title: 'Error', description: 'Could not save service.' });
     }
   };
 
-  const openDeleteDialog = (service: Service) => {
-    setServiceToDelete(service);
-  };
-
-  const confirmDeleteService = () => {
+  // Confirm deletion of a service
+  const confirmDeleteService = async () => {
     if (serviceToDelete) {
-      setServices(prevServices => prevServices.filter(s => s.id !== serviceToDelete.id));
-      toast({ title: "Service Deleted", description: `Service "${serviceToDelete.name}" has been deleted.`, variant: "destructive" });
-      setServiceToDelete(null);
+      try {
+        await deleteDoc(doc(db, 'services', serviceToDelete.id));
+        toast({ variant: 'destructive', title: 'Service Deleted', description: `Service "${serviceToDelete.name}" has been deleted.` });
+      } catch (error) {
+        console.error('Error deleting service:', error);
+        toast({ variant: 'destructive', title: 'Error', description: 'Could not delete service.' });
+      } finally {
+        setServiceToDelete(null);
+      }
     }
   };
 
@@ -65,7 +87,7 @@ export default function ServicesPage() {
       <ServiceListTable 
         services={services} 
         onEdit={handleSaveService}
-        onDelete={openDeleteDialog} 
+        onDelete={(service) => setServiceToDelete(service)} 
       />
 
       {serviceToDelete && (
@@ -79,10 +101,7 @@ export default function ServicesPage() {
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel onClick={() => setServiceToDelete(null)}>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={confirmDeleteService}
-                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              >
+              <AlertDialogAction onClick={confirmDeleteService} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
                 Delete
               </AlertDialogAction>
             </AlertDialogFooter>

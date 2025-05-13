@@ -1,100 +1,92 @@
-
 "use client";
 import React, { useState, useEffect } from 'react';
 import PageHeader from "@/components/shared/page-header";
-import { mockClients, mockServices } from "@/lib/placeholder-data"; // Tasks will come from dataStore
 import InvoiceListTable from "./components/invoice-list-table";
 import InvoiceFormDialog from "./components/invoice-form-dialog";
-import type { Invoice, Client, Task, Service } from "@/lib/types";
+import type { Invoice, Client, Task, Service } from '@/lib/types';
 import { useToast } from "@/hooks/use-toast";
-import type { InvoiceFormData } from './components/invoice-form-dialog';
-import { dataStore } from '@/lib/data-store';
+// Import FormData type (renamed) instead of InvoiceFormData
+import type { FormData as InvoiceFormData } from './components/invoice-form-dialog';
 import ProtectedRoute from "@/components/ProtectedRoute";
+import { db } from "@/lib/firebaseConfig";
+import { collection, getDocs, doc, updateDoc } from "firebase/firestore";
+import { format, parseISO } from 'date-fns';
 
 export default function InvoicesPage() {
-  const [invoices, setInvoices] = useState<Invoice[]>(() => dataStore.getInvoices() as Invoice[]);
-  const [tasks, setTasks] = useState<Task[]>(() => dataStore.getTasks() as Task[]); // For context in InvoiceListTable
-  const clients = mockClients; // Assuming clients are static
-  const services = mockServices; // Assuming services are static
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [services, setServices] = useState<Service[]>([]);
   const { toast } = useToast();
-
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingInvoice, setEditingInvoice] = useState<Partial<Invoice> | undefined>(undefined);
 
   useEffect(() => {
-    const unsubscribeInvoices = dataStore.subscribeToInvoices(() => {
-      setInvoices([...dataStore.getInvoices()]);
-    });
-    const unsubscribeTasks = dataStore.subscribeToTasks(() => {
-      setTasks([...dataStore.getTasks()]);
-    });
-    return () => {
-      unsubscribeInvoices();
-      unsubscribeTasks();
+    const fetchData = async () => {
+      const [invSnap, taskSnap, clientSnap, serviceSnap] = await Promise.all([
+        getDocs(collection(db, "invoices")),
+        getDocs(collection(db, "tasks")),
+        getDocs(collection(db, "clients")),
+        getDocs(collection(db, "services")),
+      ]);
+      setInvoices(invSnap.docs.map(d => ({ id: d.id, ...d.data() })) as Invoice[]);
+      setTasks(taskSnap.docs.map(d => ({ id: d.id, ...d.data() })) as Task[]);
+      setClients(clientSnap.docs.map(d => ({ id: d.id, ...d.data() })) as Client[]);
+      setServices(serviceSnap.docs.map(d => ({ id: d.id, ...d.data() })) as Service[]);
     };
+    fetchData();
   }, []);
 
-  const handleEditInvoice = (invoice: Invoice) => {
-    setEditingInvoice(invoice);
+  const handleEditInvoice = (inv: Invoice) => {
+    setEditingInvoice(inv);
     setIsFormOpen(true);
   };
 
-  const handleSaveInvoice = (data: InvoiceFormData, invoiceId?: string) => {
-    if (invoiceId) {
-      const clientForInvoice = clients.find(c => c.id === data.clientId);
-      const updatedInvoiceData = { 
-        ...data, 
-        clientName: clientForInvoice?.name || data.clientName, // Ensure clientName is updated if clientId changes
-        tasks: data.selectedTasks,
-        issueDate: data.issueDate.toISOString(), 
-        dueDate: data.dueDate.toISOString(),
-        totalAmount: data.totalAmount,
-        taxAmount: data.taxAmount,
-        finalAmount: data.finalAmount,
-       };
-      dataStore.updateInvoice(invoiceId, updatedInvoiceData);
-      toast({ title: "Invoice Updated", description: `Invoice ${data.invoiceNumber} has been updated.`});
-    } else {
-      // Invoice creation is primarily handled by TasksPage. 
-      // This path should ideally not be hit if "Create New Invoice" button is removed from this page.
-      console.warn("Attempted to create a new invoice from InvoicesPage. This flow is deprecated.");
-      toast({ variant: "destructive", title: "Deprecated Action", description: "Please create invoices from the Tasks page."});
+  const handleSaveInvoice = async (data: InvoiceFormData, invoiceId?: string) => {
+    try {
+      if (invoiceId) {
+        await updateDoc(doc(db, "invoices", invoiceId), {
+          ...data,
+          issueDate: data.issueDate.toISOString(),
+          dueDate: data.dueDate.toISOString()
+        });
+        toast({ title: "Invoice Updated", description: `Invoice ${data.invoiceNumber} updated.` });
+      }
+      // refresh list
+      const invSnap = await getDocs(collection(db, "invoices"));
+      setInvoices(invSnap.docs.map(d => ({ id: d.id, ...d.data() })) as Invoice[]);
+    } catch (error) {
+      console.error("Error updating invoice:", error);
+      toast({ variant: "destructive", title: "Update Failed", description: "Could not update invoice." });
+    } finally {
+      setIsFormOpen(false);
+      setEditingInvoice(undefined);
     }
-    setIsFormOpen(false);
-    setEditingInvoice(undefined);
   };
-
 
   return (
     <ProtectedRoute allowedRoles={["admin", "client"]}>
-    <>
-      <PageHeader 
-        title="Invoices" 
-        description="Manage and track client invoices."
-      />
-      <InvoiceListTable 
-        invoices={invoices} 
-        clients={clients} 
-        tasks={tasks} 
-        services={services} 
-        onEditInvoice={handleEditInvoice} 
-        onSaveInvoice={handleSaveInvoice}
+      
+      <PageHeader title="Invoices" description="Manage and track client invoices." />
+      <InvoiceListTable
+        invoices={invoices}
+        clients={clients}
+        tasks={tasks}
+        services={services}
+        onEditInvoice={handleEditInvoice}
       />
       {isFormOpen && editingInvoice && (
-         <InvoiceFormDialog
-            invoice={editingInvoice}
-            clients={clients}
-            allTasksForClient={editingInvoice?.clientId ? dataStore.getTasks().filter(t => t.clientId === editingInvoice.clientId) : []}
-            trigger={<div />} // Empty div as trigger not used when forceOpen is true
-            onSave={handleSaveInvoice}
-            forceOpen={isFormOpen}
-            onOpenChange={(open) => {
-                setIsFormOpen(open);
-                if (!open) setEditingInvoice(undefined);
-            }}
+        <InvoiceFormDialog
+          invoice={editingInvoice}
+          clients={clients}
+          allTasksForClient={tasks.filter(t => t.clientId === editingInvoice.clientId)}
+          trigger={null}
+          forceOpen={isFormOpen}
+          onOpenChange={(open) => setIsFormOpen(open)}
+          onSave={handleSaveInvoice}
         />
+       
       )}
-    </>
     </ProtectedRoute>
   );
 }

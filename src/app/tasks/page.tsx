@@ -1,178 +1,167 @@
+"use client";
 
-"use client"; // Required for useState, useEffect, useRouter
 import React, { useState, useEffect } from 'react';
 import PageHeader from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { PlusCircle } from "lucide-react";
-import { mockClients, mockServices } from "@/lib/placeholder-data";
 import TaskListTable from "./components/task-list-table";
 import TaskFormDialog from "./components/task-form-dialog";
 import InvoiceFormDialog from "@/app/invoices/components/invoice-form-dialog";
 import type { Task as TaskType, Client, Service, Invoice, InvoiceTaskItem } from "@/lib/types";
 import { useToast } from "@/hooks/use-toast";
-import type { InvoiceFormData } from '@/app/invoices/components/invoice-form-dialog';
-import { dataStore } from '@/lib/data-store';
+import type { InvoiceFormData } from "@/app/invoices/components/invoice-form-dialog";
+import type { FormData as InvoiceFormData } from "@/app/invoices/components/invoice-form-dialog";import { db } from "@/lib/firebaseConfig";
+import { 
+  collection,
+  onSnapshot,
+  addDoc,
+  updateDoc,
+  doc
+} from "firebase/firestore";
 
 export default function TasksPage() {
   const { toast } = useToast();
-  const [tasks, setTasks] = useState<TaskType[]>(() => dataStore.getTasks() as TaskType[]);
-  const clients = mockClients; 
-  const services = mockServices; 
 
+  // Firestore state
+  const [tasks, setTasks] = useState<TaskType[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [services, setServices] = useState<Service[]>([]);
+
+  // Invoice dialog state
   const [isInvoiceFormOpen, setIsInvoiceFormOpen] = useState(false);
-  const [invoiceDataForForm, setInvoiceDataForForm] = useState<Partial<Omit<Invoice, 'id' | 'totalAmount' | 'taxAmount' | 'finalAmount'>> & {tasks: InvoiceTaskItem[]} | undefined>(undefined);
-  const [selectedClientForInvoice, setSelectedClientForInvoice] = useState<Client | undefined>(undefined);
+  const [invoiceDataForForm, setInvoiceDataForForm] = useState<Partial<Invoice> & { tasks: InvoiceTaskItem[] }>();
+  const [selectedClientForInvoice, setSelectedClientForInvoice] = useState<Client>();
 
+  // Subscribe to Firestore collections
   useEffect(() => {
-    const unsubscribeTasks = dataStore.subscribeToTasks(() => {
-      setTasks([...dataStore.getTasks()]);
+    const unsubTasks = onSnapshot(collection(db, 'tasks'), snapshot => {
+      setTasks(snapshot.docs.map(d => ({ id: d.id, ...d.data() })) as TaskType[]);
     });
+    const unsubClients = onSnapshot(collection(db, 'clients'), snapshot => {
+      setClients(snapshot.docs.map(d => ({ id: d.id, ...d.data() })) as Client[]);
+    });
+    const unsubServices = onSnapshot(collection(db, 'services'), snapshot => {
+      setServices(snapshot.docs.map(d => ({ id: d.id, ...d.data() })) as Service[]);
+    });
+
     return () => {
-      unsubscribeTasks();
+      unsubTasks();
+      unsubClients();
+      unsubServices();
     };
   }, []);
 
-  const handleSaveTask = (data: Omit<TaskType, 'id' | 'clientName' | 'date'> & { date: Date }, taskId?: string) => {
-    const taskPayload = {
-      ...data,
-      date: data.date.toISOString(),
-    };
-
-    if (taskId) {
-      dataStore.updateTask(taskId, taskPayload);
-      toast({ title: "Task Updated", description: "The task has been successfully updated." });
-    } else {
-      const clientName = clients.find(c=>c.id === data.clientId)?.name || '';
-      const newTask: TaskType = {
-        id: `task-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-        ...taskPayload,
-        clientName, 
-      };
-      dataStore.addTask(newTask);
-      toast({ title: "Task Added", description: "The new task has been successfully logged." });
+  // Save or update a task in Firestore
+  const handleSaveTask = async (
+    data: Omit<TaskType, 'id' | 'clientName' | 'date'> & { date: Date },
+    taskId?: string
+  ) => {
+    try {
+      const payload = { ...data, date: data.date.toISOString() };
+      if (taskId) {
+        await updateDoc(doc(db, 'tasks', taskId), payload);
+        toast({ title: 'Task Updated', description: 'The task has been updated.' });
+      } else {
+        const clientName = clients.find(c => c.id === data.clientId)?.name || '';
+        await addDoc(collection(db, 'tasks'), { ...payload, clientName });
+        toast({ title: 'Task Added', description: 'A new task has been logged.' });
+      }
+    } catch (error) {
+      console.error('Error saving task:', error);
+      toast({ variant: 'destructive', title: 'Error', description: 'Could not save task.' });
     }
   };
 
-  const handleCreateInvoiceFromTasks = (selectedTasksToInvoice: TaskType[]) => {
-    if (selectedTasksToInvoice.length === 0) {
-      toast({ variant: "destructive", title: "No Tasks Selected", description: "Please select unbilled tasks to create an invoice." });
+  // Prepare invoice data when creating invoice from selected tasks
+  const handleCreateInvoiceFromTasks = (selected: TaskType[]) => {
+    if (selected.length === 0) {
+      toast({ variant: 'destructive', title: 'No Tasks Selected', description: 'Select tasks to invoice.' });
       return;
     }
-    const clientForInvoice = clients.find(c => c.id === selectedTasksToInvoice[0].clientId);
-    if (!clientForInvoice) {
-      toast({ variant: "destructive", title: "Client Not Found", description: "Could not find client for the selected tasks." });
+    const client = clients.find(c => c.id === selected[0].clientId);
+    if (!client) {
+      toast({ variant: 'destructive', title: 'Client Not Found', description: 'Cannot find client.' });
       return;
     }
+    setSelectedClientForInvoice(client);
 
-    setSelectedClientForInvoice(clientForInvoice);
+    const items: InvoiceTaskItem[] = selected.map(t => ({ taskId: t.id, description: t.description, hours: t.hours }));
+    const invNum = `INV-${new Date().getFullYear()}-${String(Math.floor(Math.random()*9000)+1000)}`;
 
-    const invoiceTasks: InvoiceTaskItem[] = selectedTasksToInvoice.map(task => ({
-        taskId: task.id,
-        description: task.description,
-        hours: task.hours,
-    }));
-
-    const newInvoiceNumber = `INV-${new Date().getFullYear()}-${String(Math.floor(Math.random()*9000)+1000).padStart(4, '0')}`;
-    
     setInvoiceDataForForm({
-      clientId: clientForInvoice.id,
-      clientName: clientForInvoice.name,
-      tasks: invoiceTasks, 
-      issueDate: new Date().toISOString(), 
-      dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(), 
+      clientId: client.id,
+      clientName: client.name,
+      tasks: items,
+      issueDate: new Date().toISOString(),
+      dueDate: new Date(Date.now() + 14*24*60*60*1000).toISOString(),
       status: 'draft',
-      invoiceNumber: newInvoiceNumber,
-      taxRate: clientForInvoice.currency === 'INR' ? 18 : 10, 
+      invoiceNumber: invNum,
+      taxRate: client.currency === 'INR' ? 18 : 10,
     });
     setIsInvoiceFormOpen(true);
   };
 
-  const handleSaveInvoice = (invoiceFormData: InvoiceFormData) => {
+  // Save invoice to Firestore and mark tasks billed
+  const handleSaveInvoice = async (data: InvoiceFormData) => {
     try {
-      const clientForInvoice = clients.find(c => c.id === invoiceFormData.clientId);
-      if (!clientForInvoice) {
-          toast({ variant: "destructive", title: "Error", description: "Client not found during invoice saving." });
-          console.error("TasksPage: Client not found for clientId:", invoiceFormData.clientId);
-          return;
+      // Add invoice
+      await addDoc(collection(db, 'invoices'), {
+        ...data,
+        issueDate: data.issueDate.toISOString(),
+        dueDate: data.dueDate.toISOString(),
+      });
+      // Update tasks as billed
+      for (const item of data.selectedTasks) {
+        await updateDoc(doc(db, 'tasks', item.taskId), { billed: true });
       }
-
-      const newInvoice: Invoice = {
-          id: `invoice-${Date.now()}-${Math.random().toString(36).substring(2,7)}`,
-          invoiceNumber: invoiceFormData.invoiceNumber,
-          clientId: invoiceFormData.clientId,
-          clientName: clientForInvoice.name, 
-          tasks: invoiceFormData.selectedTasks, 
-          totalAmount: invoiceFormData.totalAmount,
-          taxAmount: invoiceFormData.taxAmount,
-          finalAmount: invoiceFormData.finalAmount,
-          status: invoiceFormData.status,
-          issueDate: invoiceFormData.issueDate.toISOString(),
-          dueDate: invoiceFormData.dueDate.toISOString(),
-          notes: invoiceFormData.notes,
-          razorpayLink: invoiceFormData.razorpayLink,
-      };
-      
-      dataStore.addInvoice(newInvoice);
-
-      const taskUpdates = invoiceFormData.selectedTasks.map((t) => ({ 
-          taskId: t.taskId,
-          data: { billed: true } as Partial<TaskType> 
-      }));
-      dataStore.updateMultipleTasks(taskUpdates); 
-
-      toast({ title: "Invoice Created", description: `New invoice ${newInvoice.invoiceNumber} created and tasks marked as billed.` });
+      toast({ title: 'Invoice Created', description: `Invoice ${data.invoiceNumber} created.` });
+    } catch (error) {
+      console.error('Error saving invoice:', error);
+      toast({ variant: 'destructive', title: 'Error', description: 'Could not save invoice.' });
+    } finally {
       setIsInvoiceFormOpen(false);
       setInvoiceDataForForm(undefined);
       setSelectedClientForInvoice(undefined);
-    } catch (error) {
-      console.error("Error in handleSaveInvoice:", error);
-      toast({ variant: "destructive", title: "Error Saving Invoice", description: `An unexpected error occurred: ${error instanceof Error ? error.message : String(error)}` });
     }
   };
-  
-  let tasksForInvoiceDialog: TaskType[] = [];
-  if (isInvoiceFormOpen && selectedClientForInvoice && invoiceDataForForm) { // invoiceDataForForm.tasks might be empty, that's fine.
-    const currentTasksState = tasks; 
-    // Pass all tasks for the client. The dialog will handle displaying billed status and pre-selecting.
-    tasksForInvoiceDialog = currentTasksState.filter(t => t.clientId === selectedClientForInvoice.id);
-  }
+
+  // Determine tasks for invoice dialog
+  const tasksForDialog: TaskType[] = isInvoiceFormOpen && selectedClientForInvoice
+    ? tasks.filter(t => t.clientId === selectedClientForInvoice.id)
+    : [];
 
   return (
     <>
       <PageHeader
         title="Tasks"
-        description="Log and manage tasks performed for your clients."
+        description="Log and manage tasks for clients."
         actions={
           <TaskFormDialog
             clients={clients}
             services={services}
-            trigger={<Button><PlusCircle className="mr-2 h-4 w-4" /> Log New Task</Button>}
+            trigger={<Button><PlusCircle className="mr-2 h-4 w-4" /> Log Task</Button>}
             onSave={handleSaveTask}
           />
         }
       />
+
       <TaskListTable
-        tasks={tasks} 
+        tasks={tasks}
         clients={clients}
         services={services}
         onSaveTask={handleSaveTask}
         onCreateInvoice={handleCreateInvoiceFromTasks}
       />
-       {isInvoiceFormOpen && selectedClientForInvoice && invoiceDataForForm && (
+
+      {isInvoiceFormOpen && selectedClientForInvoice && invoiceDataForForm && (
         <InvoiceFormDialog
-          invoice={invoiceDataForForm as Partial<Invoice>} 
+          invoice={invoiceDataForForm}
           clients={clients}
-          allTasksForClient={tasksForInvoiceDialog}
-          trigger={<div />} 
-          onSave={handleSaveInvoice}
+          allTasksForClient={tasksForDialog}
+          trigger={null}
           forceOpen={isInvoiceFormOpen}
-          onOpenChange={(open) => {
-            setIsInvoiceFormOpen(open);
-            if (!open) {
-              setInvoiceDataForForm(undefined);
-              setSelectedClientForInvoice(undefined);
-            }
-          }}
+          onOpenChange={setIsInvoiceFormOpen}
+          onSave={handleSaveInvoice}
         />
       )}
     </>

@@ -6,6 +6,7 @@ export interface Client {
   mobile?: string; // Kept as optional, was phone
   email: string;
   hourlyRate: number;
+  address?: string;
   createdAt: string; // Represents "Joined On"
   status: 'active' | 'inactive'; // New
   projectName: string; // New

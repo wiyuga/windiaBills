@@ -68,7 +68,7 @@ export default function ClientsPage() {
   };
 
   return (
-    <ProtectedRoute allowedRoles={["admin", "client"]}>
+    //<ProtectedRoute allowedRoles={["admin", "client"]}>
       <div>
         <PageHeader 
           title="Clients" 
@@ -83,6 +83,6 @@ export default function ClientsPage() {
         />
         <ClientListTable clients={currentClients} services={currentServices} onSaveClient={handleSaveClient} />
       </div>
-    </ProtectedRoute>
+    // </ProtectedRoute>
   );
 }

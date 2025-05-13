@@ -1,4 +1,5 @@
 // components/ProtectedRoute.tsx
+"use client";
 import { useUserRole } from "@/hooks/useUserRole";
 import { useRouter } from "next/router";
 import { useEffect } from "react";

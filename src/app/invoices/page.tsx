@@ -1,6 +1,5 @@
 
 "use client";
-import ProtectedRoute from "@/components/ProtectedRoute";
 import React, { useState, useEffect } from 'react';
 import PageHeader from "@/components/shared/page-header";
 import { mockClients, mockServices } from "@/lib/placeholder-data"; // Tasks will come from dataStore
@@ -10,6 +9,7 @@ import type { Invoice, Client, Task, Service } from "@/lib/types";
 import { useToast } from "@/hooks/use-toast";
 import type { InvoiceFormData } from './components/invoice-form-dialog';
 import { dataStore } from '@/lib/data-store';
+import ProtectedRoute from "@/components/ProtectedRoute";
 
 export default function InvoicesPage() {
   const [invoices, setInvoices] = useState<Invoice[]>(() => dataStore.getInvoices() as Invoice[]);

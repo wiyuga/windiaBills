@@ -1,5 +1,4 @@
 "use client";
-import ProtectedRoute from "@/components/ProtectedRoute";
 import React, { useState } from 'react';
 import PageHeader from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
@@ -9,6 +8,7 @@ import ClientListTable from "./components/client-list-table";
 import ClientFormDialog from "./components/client-form-dialog";
 import type { Client, Service } from '@/lib/types';
 import { useToast } from "@/hooks/use-toast";
+import ProtectedRoute from "@/components/ProtectedRoute";
 
 export default function ClientsPage() {
   const [currentClients, setCurrentClients] = useState<Client[]>(mockClients);
@@ -36,7 +36,7 @@ export default function ClientsPage() {
 
   return (
     <ProtectedRoute allowedRoles={["admin", "client"]}>
-    <>
+    <div>
       <PageHeader 
         title="Clients" 
         description="Manage your clients and their billing information."
@@ -49,7 +49,7 @@ export default function ClientsPage() {
         } 
       />
       <ClientListTable clients={currentClients} services={currentServices} onSaveClient={handleSaveClient} />
-    </>
+    </div>
     </ProtectedRoute>
 
   );

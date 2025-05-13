@@ -1,4 +1,3 @@
-tsx
 "use client";
 
 import React, { useState, useEffect } from 'react';
@@ -27,6 +26,7 @@ import {
   updateDoc,
   doc,
   deleteDoc,
+  serverTimestamp,
 } from 'firebase/firestore';
 
 export default function ServicesPage() {
@@ -49,10 +49,16 @@ export default function ServicesPage() {
   const handleSaveService = async (data: { name: string }, serviceId?: string) => {
     try {
       if (serviceId) {
-        await updateDoc(doc(db, 'services', serviceId), data);
+        await updateDoc(doc(db, 'services', serviceId), {
+          ...data,
+          updatedAt: serverTimestamp() 
+        });
         toast({ title: 'Service Updated', description: `Service "${data.name}" has been updated.` });
       } else {
-        await addDoc(collection(db, 'services'), data);
+        await addDoc(collection(db, 'services'), { 
+          ...data,
+          createdAt: serverTimestamp()
+        });
         toast({ title: 'Service Added', description: `Service "${data.name}" has been added.` });
       }
       // Local state updated by onSnapshot

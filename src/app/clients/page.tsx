@@ -7,7 +7,6 @@ import { PlusCircle } from "lucide-react";
 import ClientListTable from "./components/client-list-table";
 import ClientFormDialog from "./components/client-form-dialog";
 import type { Client, Service } from '@/lib/types';
-import type { ClientFormData } from './components/client-form-dialog';
 import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebaseConfig";
 import { collection, addDoc, updateDoc, doc, onSnapshot, deleteDoc } from "firebase/firestore";
@@ -20,6 +19,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 
 export default function ClientsPage() {

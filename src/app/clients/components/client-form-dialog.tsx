@@ -38,7 +38,7 @@ const clientSchema = z.object({
   address: z.string().optional(), // Kept from original
 });
 
-type ClientFormData = z.infer<typeof clientSchema>;
+export type ClientFormData = z.infer<typeof clientSchema>;
 
 interface ClientFormDialogProps {
   client?: Client;

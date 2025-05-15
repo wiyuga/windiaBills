@@ -205,7 +205,7 @@ export default function ClientFormDialog({ client, services, trigger, onSave }: 
                                     <Checkbox
                                         id={`service-${serviceItem.id}`}
                                         checked={field.value?.includes(serviceItem.id)}
-                                        onCheckedChange={(checked) => {
+                                        onCheckedChange={(checked: boolean) => {
                                             const newValue = checked
                                                 ? [...(field.value || []), serviceItem.id]
                                                 : (field.value || []).filter((id) => id !== serviceItem.id);

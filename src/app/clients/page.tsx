@@ -124,7 +124,7 @@ export default function ClientsPage() {
           onDeleteClient={(client) => setClientToDelete(client)}
         />
         {clientToDelete && (
-          <AlertDialog open={!!clientToDelete} onOpenChange={(open) => !open && setClientToDelete(null)}>
+          <AlertDialog open={!!clientToDelete} onOpenChange={(open: boolean) => !open && setClientToDelete(null)}>
             <AlertDialogContent>
               <AlertDialogHeader>
                 <AlertDialogTitle>Are you sure you want to delete "{clientToDelete.name}"?</AlertDialogTitle>

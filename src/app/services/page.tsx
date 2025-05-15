@@ -107,7 +107,7 @@ actions={
   />
 
   {serviceToDelete && (
-    <AlertDialog open={!!serviceToDelete} onOpenChange={open => !open && setServiceToDelete(null)}>
+    <AlertDialog open={!!serviceToDelete} onOpenChange={(open: boolean) => !open && setServiceToDelete(null)}>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>

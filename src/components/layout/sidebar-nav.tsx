@@ -1,3 +1,4 @@
+
 // src/components/layout/sidebar-nav.tsx
 "use client";
 import Link from 'next/link';
@@ -33,8 +34,9 @@ export default function SidebarNav() {
     <SidebarMenu>
       {navItems.map((item) => (
         <SidebarMenuItem key={item.href}>
-          <Link href={item.href} passHref legacyBehavior>
+          <Link href={item.href}>
             <SidebarMenuButton
+              asChild={false} // Ensure SidebarMenuButton is not trying to render its own anchor
               className={cn(
                 "w-full justify-start",
                 pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href)) ? "bg-sidebar-accent text-sidebar-accent-foreground" : ""

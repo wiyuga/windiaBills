@@ -54,22 +54,24 @@ return () => unsubscribe();
 
 // Save or update a service in Firestore
 const handleSaveService = async (data: { name: string }, serviceId?: string) => {
-try {
-if (serviceId) {
-await updateDoc(doc(db, 'services', serviceId), {
-...data,
-updatedAt: serverTimestamp(),
- });toast({ title: 'Service Updated', description: `Service "${data.name}" has been updated.` });
-} else {
-await addDoc(collection(db, 'services'), {
-...data,
-createdAt: serverTimestamp(),
- });toast({ title: 'Service Added', description: `Service "${data.name}" has been added.` });
-}
-} catch (error) {
-console.error('Error saving service:', error);
-toast({ variant: 'destructive', title: 'Error', description: 'Could not save service.' });
-}
+  try {
+    if (serviceId) {
+      await updateDoc(doc(db, 'services', serviceId), {
+        ...data,
+        updatedAt: serverTimestamp(),
+      });
+      toast({ title: 'Service Updated', description: `Service "${data.name}" has been updated.` });
+    } else {
+      await addDoc(collection(db, 'services'), {
+        ...data,
+        createdAt: serverTimestamp(),
+      });
+      toast({ title: 'Service Added', description: `Service "${data.name}" has been added.` });
+    }
+  } catch (error) {
+    console.error('Error saving service:', error);
+    toast({ variant: 'destructive', title: 'Error', description: 'Could not save service.' });
+  }
 };
 
 // Delete a service from Firestore
